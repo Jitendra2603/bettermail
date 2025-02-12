@@ -37,6 +37,64 @@ const typingAnimation = `
 const MessageContent = ({ message, conversation }: { message: Message, conversation?: Conversation }) => {
   const [imageLoadErrors, setImageLoadErrors] = useState<{[key: string]: boolean}>({});
 
+  // Handle AI suggestions
+  if (message.type === 'suggestion') {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />
+        
+        {/* Show relevant documents if available */}
+        {message.suggestion?.relevantDocs && message.suggestion.relevantDocs.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="text-xs text-muted-foreground mb-1">
+              Relevant documents:
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {message.suggestion.relevantDocs.map((doc, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-xs"
+                >
+                  <Icons.document className="w-3 h-3" />
+                  <span className="truncate max-w-[150px]">{doc.title}</span>
+                  <span className="text-muted-foreground">
+                    {Math.round(doc.similarity * 100)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Show status badge */}
+        <div className="flex items-center gap-2 mt-1">
+          <div
+            className={cn(
+              "text-xs px-2 py-0.5 rounded-full",
+              message.suggestion?.status === "approved"
+                ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+                : message.suggestion?.status === "rejected"
+                ? "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+                : "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300"
+            )}
+          >
+            {message.suggestion?.status === "approved"
+              ? "Approved"
+              : message.suggestion?.status === "rejected"
+              ? "Rejected"
+              : "Pending"}
+          </div>
+          {message.suggestion?.enhancedAt && (
+            <div className="text-xs text-muted-foreground">
+              Enhanced with context
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Handle attachments
   if (message.attachments && message.attachments.length > 0) {
     return (
       <div className="flex flex-col gap-2">
@@ -60,31 +118,52 @@ const MessageContent = ({ message, conversation }: { message: Message, conversat
               );
             }
 
-            if (attachment.mimeType.startsWith("image/")) {
+            // Show image preview
+            if (attachment.mimeType?.startsWith('image/')) {
+              if (imageLoadErrors[attachment.url]) {
+                return (
+                  <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-background/10">
+                    <Icons.imageOff size={24} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        {attachment.filename}
+                      </div>
+                      <div className="text-xs opacity-70">Failed to load image</div>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <a
                   key={index}
                   href={attachment.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="relative aspect-square rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+                  className="relative aspect-square w-full max-w-[300px] rounded-lg overflow-hidden bg-background/10 hover:bg-background/20 transition-colors"
                 >
-                  {imageLoadErrors[attachment.url] ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-background/10">
-                      <Icons.imageOff size={24} className="text-muted-foreground" />
-                    </div>
-                  ) : (
+                  <div className="absolute inset-0">
                     <Image
                       src={attachment.url}
                       alt={attachment.filename}
                       fill
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       className="object-cover"
-                      onError={() => setImageLoadErrors(prev => ({ ...prev, [attachment.url]: true }))}
+                      onError={() => {
+                        setImageLoadErrors(prev => ({
+                          ...prev,
+                          [attachment.url]: true
+                        }));
+                      }}
+                      unoptimized={attachment.url.startsWith('https://storage.googleapis.com/') || attachment.url.startsWith('/api/emails/')}
                     />
-                  )}
+                  </div>
                 </a>
               );
-            } else if (attachment.mimeType === "application/pdf") {
+            }
+
+            // Show PDF preview
+            if (attachment.mimeType === "application/pdf") {
               return (
                 <a
                   key={index}
@@ -102,33 +181,35 @@ const MessageContent = ({ message, conversation }: { message: Message, conversat
                   </div>
                 </a>
               );
-            } else {
-              return (
-                <a
-                  key={index}
-                  href={attachment.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
-                >
-                  <Icons.file size={24} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      {attachment.filename}
-                    </div>
-                    <div className="text-xs opacity-70">
-                      {attachment.mimeType.split("/")[1].toUpperCase()}
-                    </div>
-                  </div>
-                </a>
-              );
             }
+
+            // Show other file types
+            return (
+              <a
+                key={index}
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
+              >
+                <Icons.file size={24} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    {attachment.filename}
+                  </div>
+                  <div className="text-xs opacity-70">
+                    {attachment.mimeType.split("/")[1].toUpperCase()}
+                  </div>
+                </div>
+              </a>
+            );
           })}
         </div>
       </div>
     );
   }
 
+  // Show regular message content
   return <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />;
 };
 
@@ -153,8 +234,9 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   // Determine message sender type and display name
   const isSystemMessage = message.sender === "system";
+  const isAiSuggestion = message.type === "suggestion";
   const isMe = message.sender === "me";
-  const showRecipientName = !isMe && !isSystemMessage;
+  const showRecipientName = !isMe && !isSystemMessage && !isAiSuggestion;
   const recipientName = showRecipientName ? message.sender : null;
 
   // Map of reaction types to their SVG paths for the menu
@@ -386,6 +468,191 @@ export function MessageBubble({
               {message.content}
             </div>
           </div>
+        ) : isAiSuggestion ? (
+          <div
+            className={cn(
+              "group relative max-w-[75%] break-words flex-none",
+              isSystemMessage
+                ? "bg-muted/50 rounded-lg text-center"
+                : isTyping
+                ? "border-[17px] border-solid border-l-[22px] bg-blue-50 dark:bg-blue-900/20 text-gray-900 dark:text-gray-100"
+                : isMe
+                ? cn(
+                    "border-[17px] border-solid border-r-[22px] text-white",
+                    isMobileView
+                      ? "bg-[#0A7CFF]"
+                      : "bg-[linear-gradient(#47B5FF,#0A7CFF)] bg-fixed"
+                  )
+                : "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
+            )}
+            style={
+              !isSystemMessage
+                ? {
+                    borderImageSlice: isMe ? "31 43 31 31" : "31 31 31 43",
+                    borderImageSource: `url('${
+                      isMe
+                        ? rightBubbleSvg
+                        : isTyping
+                        ? typingIndicatorSvg
+                        : leftBubbleSvg
+                    }')`,
+                  }
+                : undefined
+            }
+          >
+            <div className={cn(!isTyping && "-my-2.5 -mx-1")}>
+              {/* Message content or typing indicator */}
+              {isTyping ? (
+                <div className="flex flex-col">
+                  {/* Add this to cover up the right border */}
+                  <div
+                    className={cn(
+                      "absolute border-r-[0.5px] border-background",
+                      !isMe || isTyping ? "inset-[-17px]" : "inset-[-22px]"
+                    )}
+                  />
+                  <div className="text-[14px] flex items-center">
+                    <div className="flex items-center justify-center gap-[4px] bg-gray-100 dark:bg-[#404040]">
+                      <style>{typingAnimation}</style>
+                      <div
+                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                        style={{ animation: "blink 1.4s infinite linear" }}
+                      />
+                      <div
+                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                        style={{
+                          animation: "blink 1.4s infinite linear 0.2s",
+                        }}
+                      />
+                      <div
+                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                        style={{
+                          animation: "blink 1.4s infinite linear 0.4s",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <Popover
+                  open={isOpen}
+                  modal={true}
+                  onOpenChange={handleOpenChange}
+                >
+                  <PopoverTrigger asChild>
+                    <div className="flex flex-col cursor-pointer">
+                      {/* Add this to cover up the right border */}
+                      <div
+                        className={cn(
+                          "absolute border-r-[0.5px] border-background",
+                          !isMe ? "inset-[-17px]" : "inset-[-22px]"
+                        )}
+                      />
+                      <div className="text-[14px] flex items-center">
+                        <MessageContent message={message} conversation={conversation} />
+                      </div>
+                    </div>
+                  </PopoverTrigger>
+
+                  {/* Reaction menu */}
+                  <PopoverContent
+                    className="flex p-2 gap-2 w-fit rounded-full bg-gray-100 dark:bg-[#404040] z-50 reaction-menu"
+                    align={isMe ? "end" : "start"}
+                    alignOffset={-8}
+                    side="top"
+                    sideOffset={20}
+                  >
+                    {/* Reaction buttons */}
+                    {Object.entries(menuReactionIcons).map(([type, icon]) => (
+                      <button
+                        key={type}
+                        onClick={() => {
+                          handleReaction(type as ReactionType);
+                        }}
+                        className={cn(
+                          "inline-flex items-center justify-center rounded-full w-8 h-8 aspect-square p-0 cursor-pointer text-base transition-all duration-200 ease-out text-gray-500 hover:scale-125 flex-shrink-0",
+                          isReactionActive(type as ReactionType)
+                            ? "bg-[#0A7CFF] text-white scale-110"
+                            : ""
+                        )}
+                      >
+                        <Image
+                          src={
+                            isReactionActive(type as ReactionType)
+                              ? icon
+                                  .replace("-gray", "-white")
+                                  .replace("-dark", "-white")
+                              : icon
+                          }
+                          width={24}
+                          height={24}
+                          alt={`${type} reaction`}
+                          className="w-6 h-6"
+                        />
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
+              {/* Display existing reactions */}
+              {message.reactions && message.reactions.length > 0 && (
+                <div
+                  className={cn(
+                    "absolute -top-8 flex",
+                    isMe ? "-left-8" : "-right-8",
+                    isMe ? "flex-row" : "flex-row-reverse"
+                  )}
+                >
+                  {[...message.reactions]
+                    .sort(
+                      (a, b) =>
+                        new Date(a.timestamp).getTime() -
+                        new Date(b.timestamp).getTime()
+                    )
+                    .map((reaction, index, array) => (
+                      <Popover key={`${reaction.type}-${reaction.timestamp}`}>
+                        <PopoverTrigger>
+                          <div
+                            key={`${reaction.type}-${reaction.timestamp}`}
+                            className={cn(
+                              "w-8 h-8 flex items-center justify-center text-sm relative cursor-pointer",
+                              index !== array.length - 1 &&
+                                (isMe ? "-mr-7" : "-ml-7"),
+                              `z-[${array.length - index}]`,
+                              // Add animation class when reaction is new
+                              // new Date().getTime() - new Date(reaction.timestamp).getTime() < 1000 && "reaction-pop"
+                            )}
+                            style={getReactionStyle(reaction, isMe, isMobileView)}
+                          >
+                            {reaction.sender === "me" && !isMobileView && (
+                              <Image
+                                src={getReactionIconSvg(
+                                  reaction.sender === "me",
+                                  isMe,
+                                  reaction.type,
+                                  isMobileView,
+                                  true
+                                )}
+                                width={32}
+                                height={32}
+                                alt={`${reaction.type} reaction`}
+                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
+                                unoptimized
+                              />
+                            )}
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-fit max-w-[200px] break-words px-3 py-1.5 bg-gray-100 dark:bg-[#404040] border-gray-100 dark:border-[#404040]">
+                          <p className="text-sm">
+                            {formatReactions(message.reactions || [])}
+                          </p>
+                        </PopoverContent>
+                      </Popover>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <div
             className={cn(
@@ -555,6 +822,7 @@ export function MessageBubble({
                                 height={32}
                                 alt={`${reaction.type} reaction`}
                                 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
+                                unoptimized
                               />
                             )}
                           </div>

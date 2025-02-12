@@ -1,17 +1,17 @@
 import { google } from 'googleapis';
 import { adminDb } from './firebase-admin';
+import { gmail_v1 } from 'googleapis';
 
 export class GmailService {
-  private gmail;
-  private auth;
+  private gmail: gmail_v1.Gmail;
 
   constructor(accessToken: string) {
-    this.auth = new google.auth.OAuth2();
-    this.auth.setCredentials({ access_token: accessToken });
+    const auth = new google.auth.OAuth2();
+    auth.setCredentials({ access_token: accessToken });
     
-    this.gmail = google.gmail({ 
-      version: 'v1', 
-      auth: this.auth 
+    this.gmail = google.gmail({
+      version: 'v1',
+      auth
     });
   }
 
@@ -36,12 +36,23 @@ export class GmailService {
             textBody = Buffer.from(part.body.data, 'base64').toString();
           } else if (part.mimeType === 'text/html') {
             htmlBody = Buffer.from(part.body.data, 'base64').toString();
-          } else if (part.filename) {
-            // This is an attachment
+          } else if (part.filename && part.body?.attachmentId) {
+            // Use our API endpoint for attachments
+            const extension = part.filename.split('.').pop() || '';
+            const attachmentUrl = `/api/emails/${message.id}/attachments/${part.body.attachmentId}${extension ? `.${extension}` : ''}`;
+            
+            // Log the attachment details
+            console.log('[GmailService] Found attachment:', {
+              filename: part.filename,
+              mimeType: part.mimeType,
+              attachmentId: part.body.attachmentId,
+              url: attachmentUrl
+            });
+
             attachments.push({
               filename: part.filename,
               mimeType: part.mimeType,
-              url: `/api/emails/${message.id}/attachments/${part.body.attachmentId}`,
+              url: attachmentUrl,
               attachmentId: part.body.attachmentId
             });
           }
@@ -457,6 +468,119 @@ export class GmailService {
       return response.data;
     } catch (error) {
       console.error('[GmailService] Error setting up watch:', error);
+      throw error;
+    }
+  }
+
+  async getAttachment(messageId: string, attachmentId: string) {
+    try {
+      console.log('[GmailService] Fetching attachment:', { messageId, attachmentId });
+      
+      // First get the message to verify the attachment exists
+      const message = await this.gmail.users.messages.get({
+        userId: 'me',
+        id: messageId,
+        format: 'full'
+      });
+
+      console.log('[GmailService] Message retrieved:', {
+        id: message.data.id,
+        hasParts: !!message.data.payload?.parts,
+        partsCount: message.data.payload?.parts?.length
+      });
+
+      // Helper function to normalize base64url to match Gmail's format
+      const normalizeId = (id: string) => {
+        // Remove any file extension
+        id = id.replace(/\.[^/.]+$/, "");
+        // Convert URL-safe characters back to base64 standard
+        return id.replace(/-/g, '+').replace(/_/g, '/');
+      };
+
+      // Find the attachment part
+      const findAttachmentPart = (parts: any[]): any => {
+        for (const part of parts) {
+          console.log('[GmailService] Checking part:', {
+            filename: part.filename,
+            mimeType: part.mimeType,
+            hasAttachmentId: !!part.body?.attachmentId,
+            attachmentId: part.body?.attachmentId
+          });
+
+          if (part.body?.attachmentId) {
+            // Compare normalized IDs
+            const normalizedPartId = normalizeId(part.body.attachmentId);
+            const normalizedRequestId = normalizeId(attachmentId);
+            if (normalizedPartId === normalizedRequestId) {
+              return part;
+            }
+          }
+          if (part.parts) {
+            const found = findAttachmentPart(part.parts);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const attachmentPart = message.data.payload?.parts ? 
+        findAttachmentPart(message.data.payload.parts) : null;
+
+      if (!attachmentPart) {
+        console.error('[GmailService] Attachment not found in message parts:', {
+          messageId,
+          attachmentId,
+          availableParts: message.data.payload?.parts?.map(p => ({
+            filename: p.filename,
+            mimeType: p.mimeType,
+            attachmentId: p.body?.attachmentId
+          }))
+        });
+        throw new Error('Attachment not found');
+      }
+
+      console.log('[GmailService] Found attachment part:', {
+        filename: attachmentPart.filename,
+        mimeType: attachmentPart.mimeType,
+        attachmentId: attachmentPart.body.attachmentId
+      });
+
+      // Get the attachment data using the original attachment ID from the part
+      const response = await this.gmail.users.messages.attachments.get({
+        userId: 'me',
+        messageId,
+        id: attachmentPart.body.attachmentId
+      });
+
+      if (!response.data.data) {
+        throw new Error('No attachment data found');
+      }
+
+      console.log('[GmailService] Got attachment data:', {
+        size: response.data.data.length,
+        estimatedSizeBytes: Math.ceil(response.data.data.length * 0.75) // base64 to bytes estimation
+      });
+
+      // Convert from base64url to regular base64 if needed
+      const base64Data = response.data.data.replace(/-/g, '+').replace(/_/g, '/');
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      return {
+        data: buffer,
+        mimeType: attachmentPart.mimeType || 'application/octet-stream',
+        filename: attachmentPart.filename || 'attachment'
+      };
+    } catch (error: any) {
+      console.error('[GmailService] Error fetching attachment:', {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+
+      if (error.response?.status === 401) {
+        throw new Error('AUTH_REFRESH_NEEDED');
+      }
+
       throw error;
     }
   }

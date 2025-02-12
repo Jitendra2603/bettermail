@@ -1,4 +1,4 @@
-import { Icons } from "./icons";
+import { Icons } from "./icons/index";
 import { Conversation } from "../types";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { initialContacts } from "../data/initial-contacts";
@@ -693,6 +693,21 @@ export function ChatHeader({
       if (!response.ok) {
         const errorData = await response.json();
         console.error("[ChatHeader] Sync failed:", errorData);
+        
+        // Handle token refresh
+        if (errorData.shouldRefresh && errorData.redirectUrl) {
+          toast({
+            title: "Authentication Required",
+            description: "Please sign in again to sync your emails",
+            variant: "destructive",
+          });
+          // Add a small delay before redirecting
+          setTimeout(() => {
+            window.location.href = errorData.redirectUrl;
+          }, 2000);
+          return;
+        }
+        
         throw new Error(errorData.error || 'Sync failed');
       }
 

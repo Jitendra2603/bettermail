@@ -1,10 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: [
-      'storage.googleapis.com',
-      'bettermail-cb010.firebasestorage.app',
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'www.googleapis.com',
+        pathname: '/gmail/v1/users/me/messages/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+      },
     ],
+    domains: ['localhost', 'www.googleapis.com', 'storage.googleapis.com'],
+    unoptimized: true,
   },
   async headers() {
     return [
@@ -15,6 +24,12 @@ const nextConfig = {
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'POST' },
           { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' },
+        ],
+      },
+      {
+        source: '/api/emails/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000' },
         ],
       },
     ];

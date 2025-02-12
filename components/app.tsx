@@ -3,7 +3,6 @@ import { ChatArea } from "./chat-area";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Nav } from "./nav";
 import { Conversation, Message, Reaction, Recipient } from "../types";
-import { v4 as uuidv4 } from "uuid";
 import { initialConversations } from "../data/initial-conversations";
 import { MessageQueue } from "../lib/message-queue";
 import { useToast } from "@/hooks/use-toast"; // Import useToast from custom hook
@@ -12,6 +11,20 @@ import { soundEffects } from "@/lib/sound-effects";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEmailSync } from "@/hooks/useEmailSync";
 import { useFirebaseAuth } from '@/hooks/useFirebaseAuth';
+
+// Helper function to generate UUID on the client side
+function generateClientUUID() {
+  // Use crypto.randomUUID() if available (modern browsers)
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export default function App() {
   const router = useRouter();
@@ -364,10 +377,11 @@ export default function App() {
   // Create new conversation
   const handleCreateConversation = (recipients: Recipient[]) => {
     const newConversation: Conversation = {
-      id: crypto.randomUUID(),
+      id: generateClientUUID(),
       recipients,
       messages: [],
-      lastMessageTime: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       unreadCount: 0,
     };
     setConversations((prev) => [newConversation, ...prev]);
@@ -419,16 +433,17 @@ export default function App() {
   const createNewConversation = (recipientNames: string[]) => {
     // Create recipients with IDs
     const recipients = recipientNames.map((name) => ({
-      id: uuidv4(),
+      id: generateClientUUID(),
       name,
     }));
 
     // Create new conversation object
     const newConversation: Conversation = {
-      id: uuidv4(),
+      id: generateClientUUID(),
       recipients,
       messages: [],
-      lastMessageTime: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       unreadCount: 0,
       hideAlerts: false,
     };
@@ -452,7 +467,7 @@ export default function App() {
     attachments: { url: string; filename: string; mimeType: string }[] = []
   ) => {
     const newMessage: Message = {
-      id: crypto.randomUUID(),
+      id: generateClientUUID(),
       content: message,
       sender: "me",
       timestamp: new Date().toISOString(),
@@ -472,7 +487,7 @@ export default function App() {
         lastMessage: attachments.length > 0 
           ? `Sent ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}${message ? ' with message' : ''}`
           : message,
-        lastMessageTime: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         // Ensure email thread properties are preserved
         isEmailThread: existingConversation.isEmailThread || false,
         threadId: existingConversation.threadId || null,
@@ -503,7 +518,7 @@ export default function App() {
 
       if (recipientList.length > 0) {
         const newConversation: Conversation = {
-          id: crypto.randomUUID(),
+          id: generateClientUUID(),
           recipients: recipientList.map((name) => ({
             id: name.toLowerCase(),
             name,
@@ -512,7 +527,8 @@ export default function App() {
           lastMessage: attachments.length > 0 
             ? `Sent ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}${message ? ' with message' : ''}`
             : message,
-          lastMessageTime: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           unreadCount: 0,
           // New conversations are not email threads by default
           isEmailThread: false,

@@ -12,24 +12,32 @@ export async function POST() {
     }
 
     if (!session.accessToken) {
-      return NextResponse.json({ error: "No access token" }, { status: 400 });
-    }
-
-    const gmailService = new GmailService(session.accessToken);
-    const watchResponse = await gmailService.watchMailbox(session.user.id);
-
-    return NextResponse.json({ success: true, data: watchResponse });
-  } catch (error) {
-    console.error("[WatchAPI] Error setting up Gmail watch:", error);
-    
-    // Check if error is due to invalid token
-    if ((error as any)?.response?.status === 401 || (error as any)?.code === 401) {
       return NextResponse.json({ 
-        error: "Token expired", 
-        shouldRefresh: true 
+        error: "No access token", 
+        shouldRefresh: true,
+        redirectUrl: "/api/auth/signin?callbackUrl=/messages"
       }, { status: 401 });
     }
 
+    try {
+      const gmailService = new GmailService(session.accessToken);
+      const watchResponse = await gmailService.watchMailbox(session.user.id);
+      return NextResponse.json({ success: true, data: watchResponse });
+    } catch (error: any) {
+      console.error("[WatchAPI] Gmail service error:", error);
+      
+      // Check if error is due to invalid token
+      if (error?.message === 'AUTH_REFRESH_NEEDED' || error?.response?.status === 401 || error?.code === 401) {
+        return NextResponse.json({ 
+          error: "Token expired", 
+          shouldRefresh: true,
+          redirectUrl: "/api/auth/signin?callbackUrl=/messages"
+        }, { status: 401 });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error("[WatchAPI] Error setting up Gmail watch:", error);
     return NextResponse.json(
       { error: "Failed to set up Gmail watch" },
       { status: 500 }

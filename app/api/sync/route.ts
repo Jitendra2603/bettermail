@@ -20,8 +20,12 @@ export async function POST() {
 
     if (!session.accessToken) {
       console.error("[SyncAPI] No access token in session");
-      // Force a token refresh by redirecting to login
-      return NextResponse.json({ error: "Token expired", shouldRefresh: true }, { status: 401 });
+      // Force a token refresh by returning a special response
+      return NextResponse.json({ 
+        error: "Token expired", 
+        shouldRefresh: true,
+        redirectUrl: "/api/auth/signin?callbackUrl=/messages" 
+      }, { status: 401 });
     }
 
     console.log("[SyncAPI] Starting sync for user:", {
@@ -75,10 +79,11 @@ export async function POST() {
       console.error("[SyncAPI] Error in Gmail service:", error);
       
       // Check if error is due to invalid token
-      if (error?.response?.status === 401 || error?.code === 401) {
+      if (error?.message === 'AUTH_REFRESH_NEEDED' || error?.response?.status === 401 || error?.code === 401) {
         return NextResponse.json({ 
           error: "Token expired", 
-          shouldRefresh: true 
+          shouldRefresh: true,
+          redirectUrl: "/api/auth/signin?callbackUrl=/messages" 
         }, { status: 401 });
       }
       throw error;
@@ -88,10 +93,7 @@ export async function POST() {
   } catch (error) {
     console.error("[SyncAPI] Sync error:", error);
     return NextResponse.json(
-      { 
-        error: "Failed to sync emails", 
-        details: error instanceof Error ? error.message : String(error)
-      },
+      { error: "Failed to sync emails" },
       { status: 500 }
     );
   }

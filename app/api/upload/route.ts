@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/app/api/auth/[...nextauth]/auth-options";
 import { adminStorage } from "@/lib/firebase-admin";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 
 export const config = {
   api: {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     // Generate unique filename with user folder and timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileExtension = file.name.split(".").pop();
-    const fileName = `users/${session.user.id}/uploads/${timestamp}-${uuidv4()}.${fileExtension}`;
+    const fileName = `users/${session.user.id}/uploads/${timestamp}-${randomUUID()}.${fileExtension}`;
 
     // Create file reference
     const fileRef = bucket.file(fileName);
