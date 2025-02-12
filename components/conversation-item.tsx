@@ -10,6 +10,7 @@ import {
 } from "./ui/context-menu";
 import { Icons } from "./icons";
 import { useTheme } from "next-themes";
+import Image from "next/image";
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -123,6 +124,12 @@ export function ConversationItem({
     onUpdateConversation(updatedConversations, 'mute');
   };
 
+  const typingIndicatorSvg = isSwipeOpen
+    ? "/typing-bubbles/typing-blue.svg"
+    : effectiveTheme === "dark"
+    ? "/typing-bubbles/typing-dark.svg"
+    : "/typing-bubbles/typing-light.svg";
+
   const ConversationContent = (
     <button
       onClick={() => onSelectConversation(conversation.id)}
@@ -146,10 +153,14 @@ export function ConversationItem({
       <div className="flex items-center gap-2 w-full px-4">
         <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
           {conversation.recipients[0].avatar ? (
-            <img
+            <Image
               src={conversation.recipients[0].avatar}
               alt=""
               className="w-full h-full object-cover"
+              width={40}
+              height={40}
+              sizes="40px"
+              fill={false}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
@@ -186,16 +197,14 @@ export function ConversationItem({
             {conversation.isTyping ? (
               <div className="flex items-center py-0.5">
                 <div className="relative">
-                  <img
-                    src={
-                      activeConversation === conversation.id
-                        ? "/messages/typing-bubbles/typing-blue.svg"
-                        : effectiveTheme === "dark"
-                        ? "/messages/typing-bubbles/typing-dark.svg"
-                        : "/messages/typing-bubbles/typing-light.svg"
-                    }
-                    alt="typing"
-                    className="w-[45px] h-auto"
+                  <Image
+                    src={typingIndicatorSvg}
+                    alt="Typing indicator"
+                    width={32}
+                    height={8}
+                    className="scale-[1.2]"
+                    sizes="32px"
+                    fill={false}
                   />
                   <div className="absolute top-[40%] left-[35%] flex gap-[2px]">
                     <div

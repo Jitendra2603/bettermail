@@ -2,16 +2,20 @@ import { Sidebar } from "./sidebar";
 import { ChatArea } from "./chat-area";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Nav } from "./nav";
-import { Conversation, Message, Reaction } from "../types";
+import { Conversation, Message, Reaction, Recipient } from "../types";
 import { v4 as uuidv4 } from "uuid";
 import { initialConversations } from "../data/initial-conversations";
 import { MessageQueue } from "../lib/message-queue";
 import { useToast } from "@/hooks/use-toast"; // Import useToast from custom hook
 import { CommandMenu } from "./command-menu"; // Import CommandMenu component
 import { soundEffects } from "@/lib/sound-effects";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEmailSync } from "@/hooks/useEmailSync";
+import { useFirebaseAuth } from '@/hooks/useFirebaseAuth';
 
 export default function App() {
-  // State
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast(); // Destructure toast from custom hook
   const [isNewConversation, setIsNewConversation] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -41,45 +45,56 @@ export default function App() {
 
   const STORAGE_KEY = "dialogueConversations";
 
+  const { emailConversations, error: emailError } = useEmailSync();
+  const { authError } = useFirebaseAuth();
+
+  // Show error toast if auth fails
+  useEffect(() => {
+    if (authError) {
+      toast({
+        title: "Authentication Error",
+        description: "There was a problem with authentication. Trying to reconnect...",
+        variant: "destructive"
+      });
+    }
+  }, [authError, toast]);
+
+  // Initialize Firebase auth
+  useFirebaseAuth();
+
   // Memoized conversation selection method
   const selectConversation = useCallback(
     (conversationId: string | null) => {
-      // If clearing the selection
       if (conversationId === null) {
         setActiveConversation(null);
-        window.history.pushState({}, "", "/messages");
+        router.push("/messages");
         return;
       }
 
-      // Find the conversation in the list
       const selectedConversation = conversations.find(
         (conversation) => conversation.id === conversationId
       );
 
-      // If conversation is not found, handle gracefully
       if (!selectedConversation) {
         console.error(`Conversation with ID ${conversationId} not found`);
-
-        // Clear URL and select first available conversation
-        window.history.pushState({}, "", "/messages");
+        router.push("/messages");
 
         if (conversations.length > 0) {
           const fallbackConversation = conversations[0];
           setActiveConversation(fallbackConversation.id);
-          window.history.pushState({}, "", `?id=${fallbackConversation.id}`);
+          router.push(`/messages?id=${fallbackConversation.id}`);
         } else {
           setActiveConversation(null);
         }
         return;
       }
 
-      // Successfully select the conversation
       setActiveConversation(conversationId);
       setIsNewConversation(false);
-      window.history.pushState({}, "", `?id=${conversationId}`);
+      router.push(`/messages?id=${conversationId}`);
     },
-    [conversations, setActiveConversation, setIsNewConversation]
-  ); // Only recreate when these dependencies change
+    [conversations, router]
+  );
 
   // Effects
   // Ensure active conversation remains valid
@@ -143,76 +158,59 @@ export default function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlConversationId = urlParams.get("id");
 
-    // Start with initial conversations
-    let allConversations = [...initialConversations];
+    // Start with email conversations as the base
+    let allConversations = [...emailConversations];
 
+    // Only merge non-email conversations from localStorage
     if (saved) {
       try {
-        // Load saved conversations
         const parsedConversations = JSON.parse(saved);
-
         if (!Array.isArray(parsedConversations)) {
           console.error("Invalid conversations format in localStorage");
           return;
         }
 
-        // Create a map of initial conversation IDs for faster lookup
-        const initialIds = new Set(initialConversations.map((conv) => conv.id));
-
-        // Separate user-created and modified initial conversations
-        const userConversations = [];
-        const modifiedInitialConversations = new Map();
-
-        for (const savedConv of parsedConversations) {
-          if (initialIds.has(savedConv.id)) {
-            modifiedInitialConversations.set(savedConv.id, savedConv);
-          } else {
-            userConversations.push(savedConv);
-          }
-        }
-
-        // Update initial conversations with saved changes
-        allConversations = allConversations.map((conv) =>
-          modifiedInitialConversations.has(conv.id)
-            ? modifiedInitialConversations.get(conv.id)
-            : conv
+        // Only keep non-email conversations from localStorage
+        const userConversations = parsedConversations.filter(
+          (conv) => !conv.isEmailThread
         );
 
-        // Add user-created conversations
+        // Merge non-email conversations with email conversations
         allConversations = [...allConversations, ...userConversations];
       } catch (error) {
         console.error("Error parsing saved conversations:", error);
       }
     }
 
-    // Set conversations first
+    // Sort all conversations by last message time
+    allConversations.sort((a, b) => {
+      const timeA = new Date(b.lastMessageTime).getTime();
+      const timeB = new Date(a.lastMessageTime).getTime();
+      return timeA - timeB;
+    });
+
     setConversations(allConversations);
 
-    // Handle conversation selection after setting conversations
     if (urlConversationId) {
-      // Check if the URL conversation exists
       const conversationExists = allConversations.some(
         (c) => c.id === urlConversationId
       );
       if (conversationExists) {
-        // If it exists, select it
         setActiveConversation(urlConversationId);
         return;
       }
     }
 
-    // If mobile view, show the sidebar
     if (isMobileView) {
       window.history.pushState({}, "", "/messages");
       setActiveConversation(null);
       return;
     }
 
-    // No URL ID or invalid ID, and not mobile - select first conversation
     if (allConversations.length > 0) {
       setActiveConversation(allConversations[0].id);
     }
-  }, [isMobileView]);
+  }, [isMobileView, emailConversations]);
 
   // Update lastActiveConversation whenever activeConversation changes
   useEffect(() => {
@@ -350,78 +348,44 @@ export default function App() {
   };
 
   // Method to update conversation recipients
-  const updateConversationRecipients = (
-    conversationId: string,
-    recipientNames: string[]
-  ) => {
-    setConversations((prev) => {
-      const currentConversation = prev.find(
-        (conv) => conv.id === conversationId
-      );
-      if (!currentConversation) return prev;
-
-      // Find added and removed recipients
-      const currentNames = currentConversation.recipients.map((r) => r.name);
-      const added = recipientNames.filter(
-        (name) => !currentNames.includes(name)
-      );
-      const removed = currentNames.filter(
-        (name) => !recipientNames.includes(name)
-      );
-
-      // Create system messages (one for each change)
-      const systemMessages: Message[] = [];
-
-      // Format timestamp
-      const timestamp = new Date().toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-
-      removed.forEach((name) => {
-        systemMessages.push({
-          id: uuidv4(),
-          content: `${timestamp}\n${name} was removed from the conversation`,
-          sender: "system",
-          timestamp,
-        });
-      });
-
-      added.forEach((name) => {
-        systemMessages.push({
-          id: uuidv4(),
-          content: `${timestamp}\n${name} was added to the conversation`,
-          sender: "system",
-          timestamp,
-        });
-      });
-
-      // Find the recipient IDs for the given names
-      const newRecipients = recipientNames.map((name) => {
-        const existingRecipient = currentConversation.recipients.find(
-          (r) => r.name === name
-        );
-        return (
-          existingRecipient || {
-            id: uuidv4(),
-            name: name,
-          }
-        );
-      });
-
-      return prev.map((conversation) =>
-        conversation.id === conversationId
+  const handleUpdateConversationRecipients = (conversationId: string, recipients: Recipient[]) => {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId
           ? {
-              ...conversation,
-              recipients: newRecipients,
-              messages: [...conversation.messages, ...systemMessages],
+              ...c,
+              recipients,
             }
-          : conversation
-      );
-    });
+          : c
+      )
+    );
+  };
+
+  // Create new conversation
+  const handleCreateConversation = (recipients: Recipient[]) => {
+    const newConversation: Conversation = {
+      id: crypto.randomUUID(),
+      recipients,
+      messages: [],
+      lastMessageTime: new Date().toISOString(),
+      unreadCount: 0,
+    };
+    setConversations((prev) => [newConversation, ...prev]);
+    setActiveConversation(newConversation.id);
+  };
+
+  // Update conversation hide alerts setting
+  const handleHideAlertsChange = (conversationId: string, hideAlerts: boolean) => {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              hideAlerts,
+            }
+          : c
+      )
+    );
   };
 
   // Method to handle message draft changes
@@ -483,108 +447,97 @@ export default function App() {
 
   // Method to handle message sending
   const handleSendMessage = async (
-    messageHtml: string,
-    conversationId?: string
+    message: string,
+    conversationId?: string,
+    attachments: { url: string; filename: string; mimeType: string }[] = []
   ) => {
-    const messageText = extractMessageContent(messageHtml);
-    if (!messageText.trim()) return;
+    const newMessage: Message = {
+      id: crypto.randomUUID(),
+      content: message,
+      sender: "me",
+      timestamp: new Date().toISOString(),
+      attachments,
+      reactions: [],
+    };
 
-    // Create a new conversation if no conversation ID is provided or in new conversation mode
-    if (!conversationId || isNewConversation) {
-      // Validate recipients
-      const recipients = recipientInput
+    if (conversationId) {
+      // Find the existing conversation
+      const existingConversation = conversations.find(c => c.id === conversationId);
+      if (!existingConversation) return;
+
+      // Create updated conversation preserving all properties
+      const updatedConversation: Conversation = {
+        ...existingConversation,
+        messages: [...existingConversation.messages, newMessage],
+        lastMessage: attachments.length > 0 
+          ? `Sent ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}${message ? ' with message' : ''}`
+          : message,
+        lastMessageTime: new Date().toISOString(),
+        // Ensure email thread properties are preserved
+        isEmailThread: existingConversation.isEmailThread || false,
+        threadId: existingConversation.threadId || null,
+      };
+
+      // Update conversations state
+      setConversations(prev => 
+        prev.map(c => c.id === conversationId ? updatedConversation : c)
+      );
+
+      // Enqueue the message and wait for it to be sent
+      try {
+        await messageQueue.current?.enqueueUserMessage(updatedConversation);
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        // Revert the conversation update on failure
+        setConversations(prev => 
+          prev.map(c => c.id === conversationId ? existingConversation : c)
+        );
+        throw error;
+      }
+    } else {
+      // Create new conversation
+      const recipientList = recipientInput
         .split(",")
         .map((r) => r.trim())
-        .filter((r) => r.length > 0)
-        .map((name) => ({
-          id: uuidv4(),
-          name,
-        }));
+        .filter((r) => r.length > 0);
 
-      // Don't send if no recipients are selected
-      if (recipients.length === 0) return;
+      if (recipientList.length > 0) {
+        const newConversation: Conversation = {
+          id: crypto.randomUUID(),
+          recipients: recipientList.map((name) => ({
+            id: name.toLowerCase(),
+            name,
+          })),
+          messages: [newMessage],
+          lastMessage: attachments.length > 0 
+            ? `Sent ${attachments.length} attachment${attachments.length === 1 ? '' : 's'}${message ? ' with message' : ''}`
+            : message,
+          lastMessageTime: new Date().toISOString(),
+          unreadCount: 0,
+          // New conversations are not email threads by default
+          isEmailThread: false,
+          threadId: null,
+        };
 
-      // Create new conversation object
-      const newConversation: Conversation = {
-        id: uuidv4(),
-        recipients,
-        messages: [],
-        lastMessageTime: new Date().toISOString(),
-        unreadCount: 0,
-      };
-
-      // Create message object
-      const message: Message = {
-        id: uuidv4(),
-        content: messageText,
-        htmlContent: messageHtml,
-        sender: "me",
-        timestamp: new Date().toISOString(),
-      };
-
-      // Combine conversation with first message
-      const conversationWithMessage = {
-        ...newConversation,
-        messages: [message],
-        lastMessageTime: new Date().toISOString(),
-        unreadCount: 0,
-      };
-
-      // Update state in a single, synchronous update
-      setConversations((prev) => {
-        const updatedConversations = [conversationWithMessage, ...prev];
+        setConversations(prev => [newConversation, ...prev]);
         setActiveConversation(newConversation.id);
         setIsNewConversation(false);
         setRecipientInput("");
-        clearMessageDraft("new");
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedConversations));
-        return updatedConversations;
-      });
-
-      window.history.pushState({}, "", `?id=${newConversation.id}`);
-      messageQueue.current.enqueueAIMessage(conversationWithMessage);
-      return;
+        
+        // Enqueue the message and wait for it to be sent
+        try {
+          await messageQueue.current?.enqueueUserMessage(newConversation);
+        } catch (error) {
+          console.error("Failed to send message:", error);
+          // Remove the conversation on failure
+          setConversations(prev => prev.filter(c => c.id !== newConversation.id));
+          throw error;
+        }
+      }
     }
 
-    // Handle existing conversation
-    const conversation = conversations.find((c) => c.id === conversationId);
-    if (!conversation) {
-      console.error(
-        `Conversation with ID ${conversationId} not found. Skipping message.`
-      );
-      return;
-    }
-
-    // Create message object
-    const message: Message = {
-      id: uuidv4(),
-      content: messageText,
-      htmlContent: messageHtml,
-      sender: "me",
-      timestamp: new Date().toISOString(),
-    };
-
-    // Update conversation with user message
-    const updatedConversation = {
-      ...conversation,
-      messages: [...conversation.messages, message],
-      lastMessageTime: new Date().toISOString(),
-      unreadCount: 0,
-    };
-
-    setConversations((prev) => {
-      const updatedConversations = prev.map((c) =>
-        c.id === conversationId ? updatedConversation : c
-      );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedConversations));
-      return updatedConversations;
-    });
-
-    setActiveConversation(conversationId);
-    setIsNewConversation(false);
-    window.history.pushState({}, "", `?id=${conversationId}`);
-    messageQueue.current.enqueueUserMessage(updatedConversation);
-    clearMessageDraft(conversationId);
+    // Clear message draft
+    handleMessageDraftChange(conversationId || "new", "");
   };
 
   // Method to handle conversation deletion
@@ -723,18 +676,6 @@ export default function App() {
     [activeConversation]
   );
 
-  // Method to handle hide alerts toggle
-  const handleHideAlertsChange = useCallback(
-    (hide: boolean) => {
-      setConversations((prevConversations) =>
-        prevConversations.map((conv) =>
-          conv.id === activeConversation ? { ...conv, hideAlerts: hide } : conv
-        )
-      );
-    },
-    [activeConversation]
-  );
-
   // Handle sound toggle
   const handleSoundToggle = useCallback(() => {
     soundEffects.toggleSound();
@@ -752,100 +693,84 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh">
+    <div className="flex h-screen">
+      <Sidebar
+        conversations={conversations}
+        activeConversation={activeConversation}
+        onSelectConversation={selectConversation}
+        onNewChat={() => {
+          setIsNewConversation(true);
+          setActiveConversation(null);
+          router.push("/messages/new");
+        }}
+        onDeleteConversation={handleDeleteConversation}
+        onUpdateConversation={handleUpdateConversation}
+        isMobileView={isMobileView}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        typingStatus={typingStatus}
+        isCommandMenuOpen={isCommandMenuOpen}
+        onScroll={setIsScrolled}
+        onSoundToggle={handleSoundToggle}
+      >
+        <Nav
+          onNewChat={() => {
+            setIsNewConversation(true);
+            setActiveConversation(null);
+            router.push("/messages/new");
+          }}
+          isMobileView={isMobileView}
+          isScrolled={isScrolled}
+        />
+      </Sidebar>
+      <div className="flex-1 flex flex-col">
+        <ChatArea
+          isNewChat={isNewConversation}
+          activeConversation={
+            activeConversation
+              ? conversations.find((c) => c.id === activeConversation)
+              : undefined
+          }
+          recipientInput={recipientInput}
+          setRecipientInput={setRecipientInput}
+          isMobileView={isMobileView}
+          onBack={() => {
+            setIsNewConversation(false);
+            selectConversation(null);
+          }}
+          onSendMessage={handleSendMessage}
+          onReaction={handleReaction}
+          typingStatus={typingStatus}
+          conversationId={activeConversation}
+          onUpdateConversationRecipients={handleUpdateConversationRecipients}
+          onCreateConversation={handleCreateConversation}
+          onUpdateConversationName={handleUpdateConversationName}
+          onHideAlertsChange={handleHideAlertsChange}
+          messageDraft={
+            isNewConversation
+              ? messageDrafts["new"] || ""
+              : messageDrafts[activeConversation || ""] || ""
+          }
+          onMessageDraftChange={handleMessageDraftChange}
+          unreadCount={totalUnreadCount}
+        />
+      </div>
       <CommandMenu
         ref={commandMenuRef}
         conversations={conversations}
         activeConversation={activeConversation}
+        onSelectConversation={selectConversation}
         onNewChat={() => {
           setIsNewConversation(true);
           setActiveConversation(null);
-          window.history.pushState({}, "", "/messages");
+          router.push("/messages/new");
         }}
-        onSelectConversation={selectConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onUpdateConversation={handleUpdateConversation}
         onOpenChange={setIsCommandMenuOpen}
         soundEnabled={soundEnabled}
         onSoundToggle={handleSoundToggle}
+        onDeleteConversation={handleDeleteConversation}
+        onUpdateConversation={handleUpdateConversation}
       />
-      <main className="h-dvh w-full bg-background flex flex-col">
-        <div className="flex-1 flex h-full">
-          <div
-            className={`h-full w-full sm:w-[320px] flex-shrink-0 ${
-              isMobileView && (activeConversation || isNewConversation)
-                ? "hidden"
-                : "block sm:border-r dark:border-foreground/20"
-            }`}
-          >
-            <Sidebar
-              conversations={conversations}
-              activeConversation={activeConversation}
-              onSelectConversation={(id) => {
-                selectConversation(id);
-              }}
-              onDeleteConversation={handleDeleteConversation}
-              onUpdateConversation={handleUpdateConversation}
-              isMobileView={isMobileView}
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              typingStatus={typingStatus}
-              isCommandMenuOpen={isCommandMenuOpen}
-              onScroll={setIsScrolled}
-              onSoundToggle={handleSoundToggle}
-            >
-              <Nav
-                onNewChat={() => {
-                  setIsNewConversation(true);
-                  selectConversation(null);
-                  setRecipientInput("");
-                  handleMessageDraftChange("new", "");
-                }}
-                isMobileView={isMobileView}
-                isScrolled={isScrolled}
-              />
-            </Sidebar>
-          </div>
-          <div
-            className={`flex-1 h-full ${
-              isMobileView && !activeConversation && !isNewConversation
-                ? "hidden"
-                : "block"
-            }`}
-          >
-            <ChatArea
-              isNewChat={isNewConversation}
-              activeConversation={
-                activeConversation
-                  ? conversations.find((c) => c.id === activeConversation)
-                  : undefined
-              }
-              recipientInput={recipientInput}
-              setRecipientInput={setRecipientInput}
-              isMobileView={isMobileView}
-              onBack={() => {
-                setIsNewConversation(false);
-                selectConversation(null);
-              }}
-              onSendMessage={handleSendMessage}
-              onReaction={handleReaction}
-              typingStatus={typingStatus}
-              conversationId={activeConversation || ""}
-              onUpdateConversationRecipients={updateConversationRecipients}
-              onCreateConversation={createNewConversation}
-              onUpdateConversationName={handleUpdateConversationName}
-              onHideAlertsChange={handleHideAlertsChange}
-              messageDraft={
-                isNewConversation
-                  ? messageDrafts["new"] || ""
-                  : messageDrafts[activeConversation || ""] || ""
-              }
-              onMessageDraftChange={handleMessageDraftChange}
-              unreadCount={totalUnreadCount}
-            />
-          </div>
-        </div>
-      </main>
     </div>
   );
 }

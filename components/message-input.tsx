@@ -5,6 +5,8 @@ import {
   useEffect,
   forwardRef,
   useImperativeHandle,
+  DragEvent,
+  ClipboardEvent,
 } from "react";
 import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
@@ -16,6 +18,8 @@ import Mention from "@tiptap/extension-mention";
 import { SuggestionProps } from "@tiptap/suggestion";
 import Placeholder from "@tiptap/extension-placeholder";
 import { soundEffects } from "@/lib/sound-effects";
+import { cn } from "@/lib/utils";
+import { useFileUpload } from "@/hooks/use-file-upload";
 
 interface MessageInputProps {
   message: string;
@@ -26,6 +30,8 @@ interface MessageInputProps {
   isMobileView?: boolean;
   conversationId?: string;
   isNewChat?: boolean;
+  onFileUpload?: (files: File[]) => void;
+  attachments?: File[];
 }
 
 // Export type for message input's focus method
@@ -37,8 +43,8 @@ export type MessageInputHandle = {
 export const MessageInput = forwardRef<
   MessageInputHandle,
   Omit<MessageInputProps, "ref">
->(function MessageInput(
-  {
+>(
+  ({
     message,
     setMessage,
     handleSend,
@@ -47,13 +53,17 @@ export const MessageInput = forwardRef<
     isMobileView = false,
     conversationId,
     isNewChat = false,
+    onFileUpload,
+    attachments = [],
   },
   ref
-) {
+) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const { theme } = useTheme();
+  const [isDragging, setIsDragging] = useState(false);
+  const { isUploading, error, uploadFile } = useFileUpload();
 
   // Tiptap editor definition
   const editor = useEditor({
@@ -248,44 +258,6 @@ export const MessageInput = forwardRef<
     }
   }, [editor, conversationId, isMobileView, isNewChat]);
 
-  // Update editor height for multi-line messages
-  useEffect(() => {
-    const updateHeight = () => {
-      if (editor) {
-        const element = editor.view.dom as HTMLElement;
-        // Force reflow to get accurate scrollHeight
-        element.style.height = "auto";
-        // Get the scroll height including all content
-        const contentHeight = element.scrollHeight;
-        // Set the height considering padding and ensuring we don't exceed max height
-        const height = Math.min(200, Math.max(32, contentHeight));
-        const containerHeight = height + 32;
-
-        // Handle height for both mobile and desktop
-        element.style.height = `${height}px`;
-        element.style.overflowY = height >= 200 ? "auto" : "hidden";
-        document.documentElement.style.setProperty(
-          "--dynamic-height",
-          `${containerHeight}px`
-        );
-      }
-    };
-
-    // Update height on editor changes
-    editor?.on("update", updateHeight);
-
-    // Update height on window resize
-    window.addEventListener("resize", updateHeight);
-
-    // Initial height calculation
-    updateHeight();
-
-    return () => {
-      window.removeEventListener("resize", updateHeight);
-      editor?.off("update", updateHeight);
-    };
-  }, [editor, isMobileView]);
-
   // Reset editor height when message is cleared (e.g. after sending)
   useEffect(() => {
     if (message === "") {
@@ -329,43 +301,134 @@ export const MessageInput = forwardRef<
     };
   }, [showEmojiPicker, editor]);
 
+  // Handle file drop
+  const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      const uploadedFiles: File[] = [];
+      for (const file of files) {
+        const result = await uploadFile(file);
+        if (result) {
+          uploadedFiles.push(file);
+        }
+      }
+      if (uploadedFiles.length > 0 && onFileUpload) {
+        onFileUpload([...attachments, ...uploadedFiles]);
+      }
+    }
+  };
+
+  // Handle file paste
+  const handlePaste = async (e: ClipboardEvent<HTMLDivElement>) => {
+    const files = Array.from(e.clipboardData.files);
+    if (files.length > 0) {
+      const uploadedFiles: File[] = [];
+      for (const file of files) {
+        const result = await uploadFile(file);
+        if (result) {
+          uploadedFiles.push(file);
+        }
+      }
+      if (uploadedFiles.length > 0 && onFileUpload) {
+        onFileUpload([...attachments, ...uploadedFiles]);
+      }
+    }
+  };
+
+  // Handle drag events
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
   return (
     <div
-      className="w-full bg-background/50 backdrop-blur-md"
+      className={cn(
+        "w-full bg-background/50 backdrop-blur-md",
+        isDragging && "ring-2 ring-primary",
+        isUploading && "opacity-50 cursor-not-allowed"
+      )}
       style={{ height: "var(--dynamic-height, 64px)" }}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onPaste={handlePaste}
     >
       <div className="flex gap-2 p-4 h-full">
         <div className="relative w-full">
+          {error && (
+            <div className="absolute bottom-full mb-2 left-0 right-0 p-2 bg-destructive/10 text-destructive text-sm rounded-lg">
+              {error}
+            </div>
+          )}
+          {attachments.length > 0 && (
+            <div className="absolute bottom-full mb-2 left-0 right-0 flex flex-wrap gap-2 p-2 bg-background/80 backdrop-blur-md rounded-lg border border-border">
+              {attachments.map((file, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 bg-muted p-2 rounded-md"
+                >
+                  <span className="text-sm truncate max-w-[200px]">
+                    {file.name}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const newAttachments = [...attachments];
+                      newAttachments.splice(index, 1);
+                      onFileUpload?.(newAttachments);
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Icons.close size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <EditorContent editor={editor} className="w-full" />
           {/* Show send button for mobile when there's text */}
-          {isMobileView && editor?.getText().trim() && (
+          {isMobileView && (editor?.getText().trim() || attachments.length > 0) && (
             <button
-              type="submit"
               onClick={handleSubmit}
-              disabled={disabled || !message.trim()}
-              className="absolute right-1 bottom-1 bg-[#0A7CFF] rounded-full p-1 text-white font-bold transition-colors"
-              aria-label="Send message"
+              className="absolute right-0 top-1/2 -translate-y-1/2 text-[#0A7CFF] hover:text-[#47B5FF] transition-colors"
+              disabled={disabled || isUploading}
             >
-              <Icons.arrowUp className="h-4 w-4" strokeWidth={3} />
+              <Icons.arrowUp size={24} />
             </button>
           )}
         </div>
-        {/* Show emoji picker for desktop */}
         {!isMobileView && (
-          <button
-            ref={buttonRef}
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Icons.smile className="h-5 w-5" />
-          </button>
+          <>
+            <button
+              ref={buttonRef}
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="flex-none text-muted-foreground hover:text-foreground transition-colors"
+              disabled={disabled || isUploading}
+            >
+              <Icons.smile size={24} />
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="flex-none text-[#0A7CFF] hover:text-[#47B5FF] transition-colors"
+              disabled={disabled || isUploading || (!editor?.getText().trim() && attachments.length === 0)}
+            >
+              <Icons.arrowUp size={24} />
+            </button>
+          </>
         )}
-        {showEmojiPicker && !isMobileView && (
+        {showEmojiPicker && (
           <div
             ref={pickerRef}
-            className="absolute bottom-12 right-0 z-50"
-            style={{ width: "352px" }}
+            className="absolute bottom-full right-0 mb-2 z-50"
+            onClick={(e) => e.stopPropagation()}
           >
             <Picker
               data={data}
@@ -376,6 +439,8 @@ export const MessageInput = forwardRef<
                 setShowEmojiPicker(false);
               }}
               theme={theme === "dark" ? "dark" : "light"}
+              previewPosition="none"
+              skinTonePosition="none"
             />
           </div>
         )}

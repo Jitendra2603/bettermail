@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getUserContacts, addUserContact } from "@/lib/contacts";
 import { ContactDrawer } from "./contact-drawer";
+import { signOut } from "next-auth/react";
+import { Button } from "./ui/button";
+import "@/styles/button.css";
 
 // Helper to check if we can add more recipients
 const hasReachedMaxRecipients = (recipients: string) => {
@@ -547,7 +550,7 @@ export function ChatHeader({
     if (searchValue.trim()) {
       try {
         setIsValidating(true);
-        const response = await fetch("/messages/api/validate-contact", {
+        const response = await fetch("/api/validate-contact", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -680,6 +683,32 @@ export function ChatHeader({
     ));
   };
 
+  const handleSync = async () => {
+    try {
+      console.log("[ChatHeader] Triggering manual sync");
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[ChatHeader] Sync failed:", errorData);
+        throw new Error(errorData.error || 'Sync failed');
+      }
+
+      toast({
+        description: "Email sync started",
+      });
+    } catch (error) {
+      console.error("[ChatHeader] Sync error:", error);
+      toast({
+        title: "Sync Failed",
+        description: error instanceof Error ? error.message : "Failed to sync emails",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="sticky top-0 z-10 flex flex-col w-full bg-background/50 backdrop-blur-md border-b">
       {/* Mobile view */}
@@ -799,6 +828,32 @@ export function ChatHeader({
               </div>
             )}
           </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="custom-button sign-out"
+          >
+            <div className="button-outter">
+              <div className="button-inner">
+                <span>Sign Out</span>
+              </div>
+            </div>
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSync();
+              }}
+              className="custom-button sync"
+            >
+              <div className="button-outter">
+                <div className="button-inner">
+                  <span>Sync Emails</span>
+                </div>
+              </div>
+            </button>
+          </div>
         </div>
       ) : (
         // Desktop View
@@ -862,6 +917,32 @@ export function ChatHeader({
                 </span>
               </div>
             )}
+          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="custom-button sign-out"
+          >
+            <div className="button-outter">
+              <div className="button-inner">
+                <span>Sign Out</span>
+              </div>
+            </div>
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSync();
+              }}
+              className="custom-button sync"
+            >
+              <div className="button-outter">
+                <div className="button-inner">
+                  <span>Sync Emails</span>
+                </div>
+              </div>
+            </button>
           </div>
         </div>
       )}

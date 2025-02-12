@@ -247,12 +247,143 @@ export class MessageQueue {
         return;
       }
 
+      // Handle email threads differently
+      if (task.conversation.isEmailThread && task.conversation.threadId) {
+        // For email threads, send to the email reply endpoint
+        const lastMessage = task.conversation.messages[task.conversation.messages.length - 1];
+        
+        // Find the original sender to reply to (the last message not from 'me')
+        const originalMessage = task.conversation.messages
+          .slice()
+          .reverse()
+          .find(msg => msg.sender !== 'me');
+
+        if (!originalMessage) {
+          console.error('[MessageQueue] Could not find original message to reply to');
+          throw new Error("Could not find original message to reply to");
+        }
+
+        // Get the recipient from the original message sender
+        const recipient = originalMessage.sender;
+        
+        console.log('[MessageQueue] Preparing email reply:', {
+          threadId: task.conversation.threadId,
+          recipient,
+          content: lastMessage.content?.substring(0, 50) + '...',
+          hasAttachments: !!lastMessage.attachments?.length
+        });
+
+        // Create sending message to show in UI
+        const sendingMessage: Message = {
+          id: crypto.randomUUID(),
+          content: 'Sending email...',
+          sender: 'system',
+          type: 'info',
+          timestamp: new Date().toISOString(),
+        };
+
+        this.callbacks.onMessageGenerated(task.conversation.id, sendingMessage);
+
+        try {
+          const response = await fetch(`/api/emails/${task.conversation.threadId}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: lastMessage.content,
+              to: [recipient],
+              attachments: lastMessage.attachments
+            }),
+            signal: task.abortController.signal,
+          });
+
+          let errorData;
+          if (!response.ok) {
+            try {
+              errorData = await response.json();
+            } catch (e) {
+              errorData = { error: response.statusText };
+            }
+            
+            console.error('[MessageQueue] Failed to send email reply:', {
+              status: response.status,
+              error: errorData.error
+            });
+
+            if (response.status === 401) {
+              throw new Error('Gmail authentication expired - Please reconnect Gmail');
+            }
+            
+            throw new Error(`Failed to send email reply: ${errorData.error || response.statusText}`);
+          }
+
+          const data = await response.json();
+          console.log('[MessageQueue] Email reply sent successfully:', data);
+
+          // Create success message
+          const successMessage: Message = {
+            id: crypto.randomUUID(),
+            content: 'Email sent successfully! Your reply will appear in Gmail shortly.',
+            sender: 'system',
+            type: 'success',
+            timestamp: new Date().toISOString(),
+          };
+
+          this.callbacks.onMessageGenerated(task.conversation.id, successMessage);
+          
+          // Clear typing status
+          this.callbacks.onTypingStatusChange(null, null);
+          conversationState.status = "idle";
+          return;
+        } catch (error) {
+          console.error('[MessageQueue] Error sending email reply:', error);
+
+          // Create detailed error message
+          let errorMessage: Message;
+          if (error instanceof Error) {
+            if (error.message.includes('Gmail authentication expired')) {
+              errorMessage = {
+                id: crypto.randomUUID(),
+                content: 'Gmail authentication expired. Please sign out and sign back in to reconnect Gmail.',
+                sender: 'system',
+                type: 'error',
+                timestamp: new Date().toISOString(),
+              };
+            } else {
+              errorMessage = {
+                id: crypto.randomUUID(),
+                content: `Failed to send email: ${error.message}. Please try again.`,
+                sender: 'system',
+                type: 'error',
+                timestamp: new Date().toISOString(),
+              };
+            }
+          } else {
+            errorMessage = {
+              id: crypto.randomUUID(),
+              content: 'An unexpected error occurred while sending the email. Please try again.',
+              sender: 'system',
+              type: 'error',
+              timestamp: new Date().toISOString(),
+            };
+          }
+
+          this.callbacks.onMessageGenerated(task.conversation.id, errorMessage);
+          
+          // Clear typing status and mark as idle
+          this.callbacks.onTypingStatusChange(null, null);
+          conversationState.status = "idle";
+          
+          throw error;
+        }
+      }
+
+      // For regular chat messages, continue with existing logic
       const isGroupChat = task.conversation.recipients.length > 1;
       const shouldWrapUp =
         task.consecutiveAiMessages === MAX_CONSECUTIVE_AI_MESSAGES - 1;
 
       // Make API request
-      const response = await fetch("/messages/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

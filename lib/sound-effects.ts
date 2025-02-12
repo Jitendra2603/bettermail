@@ -16,10 +16,10 @@ class SoundEffectPlayer {
       const storedEnabled = localStorage.getItem('soundEnabled');
       this.enabled = storedEnabled !== null ? storedEnabled === 'true' : !this.isMobile;
       
-      this.sentSound = new Audio('/messages/sound-effects/sent.m4a');
-      this.receivedSound = new Audio('/messages/sound-effects/received.m4a');
-      this.unreadSound = new Audio('/messages/sound-effects/unread.m4a');
-      this.reactionSound = new Audio('/messages/sound-effects/reaction.m4a');
+      this.sentSound = new Audio('/sound-effects/sent.m4a');
+      this.receivedSound = new Audio('/sound-effects/received.m4a');
+      this.unreadSound = new Audio('/sound-effects/unread.m4a');
+      this.reactionSound = new Audio('/sound-effects/reaction.m4a');
     }
   }
 

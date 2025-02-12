@@ -1,11 +1,5 @@
-"use client";
-
-import App from "@/components/app";
+import { redirect } from 'next/navigation';
 
 export default function Home() {
-  return (
-    <div className="min-h-dvh bg-gray-100">
-      <App />
-    </div>
-  );
+  redirect('/messages');
 }

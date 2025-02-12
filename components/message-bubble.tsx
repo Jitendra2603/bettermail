@@ -11,6 +11,7 @@ import { useTheme } from "next-themes";
 import Image from "next/image";
 import { soundEffects } from "@/lib/sound-effects";
 import { Icons } from "./icons";
+import DOMPurify from 'isomorphic-dompurify';
 
 // Props for the MessageBubble component
 interface MessageBubbleProps {
@@ -32,6 +33,112 @@ const typingAnimation = `
   100% { opacity: 0.3; }
 }
 `;
+
+const MessageContent = ({ message, conversation }: { message: Message, conversation?: Conversation }) => {
+  const [imageLoadErrors, setImageLoadErrors] = useState<{[key: string]: boolean}>({});
+
+  if (message.attachments && message.attachments.length > 0) {
+    return (
+      <div className="flex flex-col gap-2">
+        {message.content && (
+          <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          {message.attachments.map((attachment, index) => {
+            // Show loading state if attachment is uploading
+            if (attachment.uploading) {
+              return (
+                <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-background/10">
+                  <Icons.loader className="animate-spin" size={24} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {attachment.filename}
+                    </div>
+                    <div className="text-xs opacity-70">Uploading...</div>
+                  </div>
+                </div>
+              );
+            }
+
+            if (attachment.mimeType.startsWith("image/")) {
+              return (
+                <a
+                  key={index}
+                  href={attachment.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative aspect-square rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+                >
+                  {imageLoadErrors[attachment.url] ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/10">
+                      <Icons.imageOff size={24} className="text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <Image
+                      src={attachment.url}
+                      alt={attachment.filename}
+                      fill
+                      className="object-cover"
+                      onError={() => setImageLoadErrors(prev => ({ ...prev, [attachment.url]: true }))}
+                    />
+                  )}
+                </a>
+              );
+            } else if (attachment.mimeType === "application/pdf") {
+              return (
+                <a
+                  key={index}
+                  href={attachment.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
+                >
+                  <Icons.pdf size={24} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {attachment.filename}
+                    </div>
+                    <div className="text-xs opacity-70">PDF Document</div>
+                  </div>
+                </a>
+              );
+            } else {
+              return (
+                <a
+                  key={index}
+                  href={attachment.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
+                >
+                  <Icons.file size={24} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {attachment.filename}
+                    </div>
+                    <div className="text-xs opacity-70">
+                      {attachment.mimeType.split("/")[1].toUpperCase()}
+                    </div>
+                  </div>
+                </a>
+              );
+            }
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />;
+};
+
+function formatFileSize(bytes: number) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
 
 export function MessageBubble({
   message,
@@ -55,12 +162,12 @@ export function MessageBubble({
   const effectiveTheme = theme === "system" ? systemTheme : theme;
 
   const menuReactionIcons = {
-    heart: "messages/reactions/heart-gray.svg",
-    like: "messages/reactions/like-gray.svg",
-    dislike: "messages/reactions/dislike-gray.svg",
-    laugh: "messages/reactions/laugh-gray.svg",
-    emphasize: "messages/reactions/emphasize-gray.svg",
-    question: "messages/reactions/question-gray.svg",
+    heart: "reactions/heart-gray.svg",
+    like: "reactions/like-gray.svg",
+    dislike: "reactions/dislike-gray.svg",
+    laugh: "reactions/laugh-gray.svg",
+    emphasize: "reactions/emphasize-gray.svg",
+    question: "reactions/question-gray.svg",
   };
 
   // State to control the Popover open state and animation
@@ -124,77 +231,6 @@ export function MessageBubble({
     );
   };
 
-  // Helper function to prepare message content by highlighting recipient names
-  const prepareContent = (
-    content: string,
-    recipients: Conversation["recipients"],
-    sender: string
-  ) => {
-    if (!recipients) return content;
-
-    let highlightedContent = content;
-    recipients.forEach((recipient) => {
-      // Special case for I. M. Pei - only highlight when seeing full initials or last name
-      if (recipient.name === "I. M. Pei") {
-        const imPeiRegex = new RegExp(
-          `\\b(I\\. M\\.|I\\. M\\. Pei|Pei)(?=\\s|$|\\p{P})`,
-          "gu"
-        );
-        highlightedContent = highlightedContent.replace(imPeiRegex, (match) => {
-          return `<span class="font-medium ${
-            sender === "me" ? "" : "text-[#0A7CFF] dark:text-[#0A7CFF]"
-          }">${match}</span>`;
-        });
-        return; // Skip regular name highlighting for I. M. Pei
-      }
-
-      // Special case for Trader Joe's - don't highlight Joe when it's part of "Trader Joe's"
-      if (recipient.name === "Joe") {
-        const joeRegex = new RegExp(
-          `(?<!Trader\\s)\\bJoe\\b(?=\\s|$|\\p{P})`,
-          "gu"
-        );
-        highlightedContent = highlightedContent.replace(joeRegex, (match) => {
-          return `<span class="font-medium ${
-            sender === "me" ? "" : "text-[#0A7CFF] dark:text-[#0A7CFF]"
-          }">${match}</span>`;
-        });
-        return; // Skip regular name highlighting for Joe
-      }
-
-      // Regular case for all other names
-      const fullNameRegex = new RegExp(
-        `@?\\b${recipient.name}(?=\\s|$|\\p{P})`,
-        "giu"
-      );
-      const firstName = recipient.name.split(" ")[0];
-      const firstNameRegex = new RegExp(
-        `@?\\b${firstName}(?=\\s|$|\\p{P})`,
-        "giu"
-      );
-
-      const colorClass =
-        sender === "me" ? "" : "text-[#0A7CFF] dark:text-[#0A7CFF]";
-
-      // Replace names with highlighted spans
-      highlightedContent = highlightedContent
-        .replace(fullNameRegex, (match) => {
-          const name = match.startsWith("@") ? match.slice(1) : match;
-          return `<span class="font-medium ${colorClass}">${
-            name.charAt(0).toUpperCase() + name.slice(1)
-          }</span>`;
-        })
-        .replace(firstNameRegex, (match) => {
-          const name = match.startsWith("@") ? match.slice(1) : match;
-          return `<span class="font-medium ${colorClass}">${
-            name.charAt(0).toUpperCase() + name.slice(1)
-          }</span>`;
-        });
-    });
-
-    return <span dangerouslySetInnerHTML={{ __html: highlightedContent }} />;
-  };
-
   // Helper function to get reaction verb
   const getReactionVerb = (type: ReactionType) => {
     switch (type) {
@@ -240,16 +276,16 @@ export function MessageBubble({
 
   const rightBubbleSvg =
     effectiveTheme === "dark"
-      ? "/messages/message-bubbles/right-bubble-dark.svg"
-      : "/messages/message-bubbles/right-bubble-light.svg";
+      ? "/message-bubbles/right-bubble-dark.svg"
+      : "/message-bubbles/right-bubble-light.svg";
   const leftBubbleSvg =
     effectiveTheme === "dark"
-      ? "/messages/message-bubbles/left-bubble-dark.svg"
-      : "/messages/message-bubbles/left-bubble-light.svg";
+      ? "/message-bubbles/left-bubble-dark.svg"
+      : "/message-bubbles/left-bubble-light.svg";
   const typingIndicatorSvg =
     effectiveTheme === "dark"
-      ? "/messages/typing-bubbles/chat-typing-dark.svg"
-      : "/messages/typing-bubbles/chat-typing-light.svg";
+      ? "/typing-bubbles/chat-typing-dark.svg"
+      : "/typing-bubbles/chat-typing-light.svg";
 
   const getReactionIconSvg = (
     reactionFromMe: boolean,
@@ -263,14 +299,14 @@ export function MessageBubble({
 
     // If overlay is true, always use the base variant without "-blue"
     if (overlay) {
-      return `messages/reactions/${orientation}-${baseVariant}-${reactionType}-overlay.svg`;
+      return `reactions/${orientation}-${baseVariant}-${reactionType}-overlay.svg`;
     }
 
     // Otherwise, if the reaction is from me and we're in mobile view, use the blue variant
     const variant =
       reactionFromMe && isMobileView ? `${baseVariant}-blue` : baseVariant;
 
-    return `messages/reactions/${orientation}-${variant}-${reactionType}.svg`;
+    return `reactions/${orientation}-${variant}-${reactionType}.svg`;
   };
 
   const getReactionStyle = (reaction: Reaction, isMe: boolean, isMobileView: boolean) => {
@@ -431,11 +467,7 @@ export function MessageBubble({
                         )}
                       />
                       <div className="text-[14px] flex items-center">
-                        {prepareContent(
-                          message.content,
-                          conversation?.recipients || [],
-                          message.sender
-                        )}
+                        <MessageContent message={message} conversation={conversation} />
                       </div>
                     </div>
                   </PopoverTrigger>
@@ -470,16 +502,10 @@ export function MessageBubble({
                                   .replace("-dark", "-white")
                               : icon
                           }
-                          width={16}
-                          height={16}
+                          width={24}
+                          height={24}
                           alt={`${type} reaction`}
-                          style={
-                            type === "emphasize"
-                              ? { transform: "scale(0.75)" }
-                              : type === "question"
-                              ? { transform: "scale(0.6)" }
-                              : undefined
-                          }
+                          className="w-6 h-6"
                         />
                       </button>
                     ))}
@@ -528,7 +554,7 @@ export function MessageBubble({
                                 width={32}
                                 height={32}
                                 alt={`${reaction.type} reaction`}
-                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
                               />
                             )}
                           </div>

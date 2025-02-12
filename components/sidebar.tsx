@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Conversation } from "../types";
 import { SearchBar } from "./search-bar";
-import { format, isToday, isYesterday, isThisWeek, parseISO } from "date-fns";
+import { format, isToday, isYesterday, isThisWeek, parseISO, isSameDay } from "date-fns";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -25,6 +25,7 @@ interface SidebarProps {
     conversations: Conversation[],
     updateType?: "pin" | "mute"
   ) => void;
+  onNewChat: () => void;
   isMobileView: boolean;
   searchTerm: string;
   onSearchChange: (term: string) => void;
@@ -41,6 +42,7 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
+  onNewChat,
   isMobileView,
   searchTerm,
   onSearchChange,
@@ -54,27 +56,46 @@ export function Sidebar({
 
   const [openSwipedConvo, setOpenSwipedConvo] = useState<string | null>(null);
   const formatTime = (timestamp: string | undefined) => {
-    if (!timestamp) return "";
+    if (!timestamp) return '';
 
     try {
-      const date = parseISO(timestamp);
-
-      if (isToday(date)) {
-        return format(date, "h:mm a"); // e.g. "12:40 AM"
+      // Check if timestamp is just a time string (e.g. "12:41 PM")
+      const timeRegex = /^\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)$/i;
+      if (timeRegex.test(timestamp)) {
+        return timestamp;
       }
 
-      if (isYesterday(date)) {
-        return "Yesterday";
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid timestamp:', timestamp);
+        return '';
       }
 
-      if (isThisWeek(date)) {
-        return format(date, "EEEE"); // e.g. "Sunday"
-      }
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const lastWeek = new Date(now);
+      lastWeek.setDate(lastWeek.getDate() - 7);
 
-      return format(date, "M/d/yy"); // e.g. "12/21/24"
+      if (isSameDay(date, now)) {
+        return date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        });
+      } else if (isSameDay(date, yesterday)) {
+        return 'Yesterday';
+      } else if (date > lastWeek) {
+        return date.toLocaleDateString('en-US', { weekday: 'short' });
+      } else {
+        return date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      }
     } catch (error) {
-      console.error("Error formatting time:", error, timestamp);
-      return "Just now";
+      console.warn('Error formatting timestamp:', error);
+      return '';
     }
   };
 
@@ -90,6 +111,11 @@ export function Sidebar({
     const variant = effectiveTheme === "dark" ? "dark" : "pinned-light";
     return `messages/reactions/left-${variant}-${reactionType}.svg`;
   };
+
+  const typingIndicatorSvg =
+    effectiveTheme === "dark"
+      ? "/typing-bubbles/typing-dark.svg"
+      : "/typing-bubbles/typing-light.svg";
 
   const sortedConversations = [...conversations].sort((a, b) => {
     // First sort by pinned status
@@ -379,11 +405,7 @@ export function Sidebar({
                                         <div className="absolute -top-4 -right-4 z-30">
                                           <div className="rounded-[16px] px-1.5 py-0 inline-flex items-center relative">
                                             <Image
-                                              src={
-                                                effectiveTheme === "dark"
-                                                  ? "/messages/typing-bubbles/typing-dark.svg"
-                                                  : "/messages/typing-bubbles/typing-light.svg"
-                                              }
+                                              src={typingIndicatorSvg}
                                               alt="Typing indicator"
                                               width={32}
                                               height={8}
