@@ -7,11 +7,9 @@ import { randomUUID } from "crypto";
 import { LlamaParseService } from "@/lib/llama-parse";
 import { OpenAIService } from "@/lib/openai";
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// Use new route segment config
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_TYPES = [
@@ -23,6 +21,30 @@ const ALLOWED_TYPES = [
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
+
+// Helper function to clean undefined values
+function cleanUndefinedValues(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefinedValues(item));
+  }
+  
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      const cleanedValue = cleanUndefinedValues(value);
+      if (cleanedValue !== undefined && cleanedValue !== null) {
+        cleaned[key] = cleanedValue;
+      }
+    }
+    return cleaned;
+  }
+  
+  return obj;
+}
 
 export async function POST(req: Request) {
   try {
@@ -92,86 +114,43 @@ export async function POST(req: Request) {
     let llamaParseService;
 
     if (process.env.OPENAI_API_KEY) {
-      openAIService = new OpenAIService(process.env.OPENAI_API_KEY);
+      openAIService = new OpenAIService(session.user.id);
     }
 
     if (process.env.LLAMA_PARSE_API_KEY) {
       llamaParseService = new LlamaParseService(
         process.env.LLAMA_PARSE_API_KEY,
         session.user.id,
-        openAIService // Pass OpenAI service for embeddings
+        openAIService
       );
     }
 
-    // Initialize metadata with basic info
-    let metadata = {
-      title: file.name,
-      pageCount: 1,
-      summary: '',
-      textContent: '',
-      imageAnalysis: '',
-      wordCount: 0,
-    };
-
-    // Process based on file type
-    if (file.type === 'application/pdf' && llamaParseService) {
-      try {
-        console.log(`[Upload] Starting document parsing for ${file.name}`);
-        const docId = await llamaParseService.parseDocument(fileName, file.name);
-        console.log(`[Upload] Document parsed successfully, id: ${docId}`);
-        
-        // Get parsed content
-        const parsedDoc = await llamaParseService.getDocumentContent(docId);
-        metadata = {
-          ...metadata,
-          title: parsedDoc.metadata?.title || file.name,
-          author: parsedDoc.metadata?.author,
-          pageCount: parsedDoc.metadata?.pageCount || 1,
-          wordCount: parsedDoc.metadata?.wordCount || 0,
-          summary: parsedDoc.metadata?.summary || '',
-          textContent: parsedDoc.text || '',
-        };
-      } catch (error) {
-        console.error('[Upload] Error parsing document:', error);
-      }
-    } else if (file.type.startsWith('image/') && openAIService) {
-      try {
-        console.log(`[Upload] Analyzing image: ${file.name}`);
-        const analysis = await openAIService.analyzeImage(url);
-        metadata = {
-          ...metadata,
-          imageAnalysis: analysis,
-        };
-      } catch (error) {
-        console.error('[Upload] Error analyzing image:', error);
-      }
+    // Process the document
+    if (!llamaParseService) {
+      throw new Error('LlamaParse service not initialized');
     }
 
-    // Store in Firestore with enhanced metadata
+    console.log(`[Upload] Starting document parsing for ${file.name}`);
+    const docId = await llamaParseService.parseDocument(fileName, file.name);
+    console.log(`[Upload] Document parsed successfully, id: ${docId}`);
+
+    // Get the document data
     const docRef = adminDb
       .collection('users')
       .doc(session.user.id)
       .collection('documents')
-      .doc();
+      .doc(docId);
 
-    await docRef.set({
-      id: docRef.id,
-      filename: file.name,
-      mimeType: file.type,
-      url,
-      sender: 'You',
-      createdAt: Timestamp.now(),
-      metadata,
-      hasEmbedding: !!metadata.embedding,
-      hasAnalysis: !!(metadata.imageAnalysis || metadata.summary),
-    });
+    const docData = await docRef.get();
+    const cleanedData = cleanUndefinedValues(docData.data());
 
-    console.log(`[Upload] Successfully processed ${file.name}`);
+    // Update with cleaned data
+    await docRef.set(cleanedData, { merge: true });
+
     return NextResponse.json({ 
       success: true, 
-      documentId: docRef.id,
+      documentId: docId,
       url,
-      metadata,
     });
   } catch (error) {
     console.error('[Upload] Error:', error);
