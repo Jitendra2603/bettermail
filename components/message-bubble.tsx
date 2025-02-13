@@ -10,8 +10,37 @@ import {
 import { useTheme } from "next-themes";
 import Image from "next/image";
 import { soundEffects } from "@/lib/sound-effects";
-import { Icons } from "./icons";
+import { Icons } from "@/components/icons";
 import DOMPurify from 'isomorphic-dompurify';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
+// Add Document interface at the top
+interface Document {
+  id: string;
+  filename: string;
+  mimeType?: string;
+  url?: string;
+  text: string;
+  metadata?: {
+    title?: string;
+    author?: string;
+    createdAt?: string;
+    pageCount?: number;
+    wordCount?: number;
+    summary?: string;
+  };
+  hasEmbedding?: boolean;
+  hasAnalysis?: boolean;
+  createdAt: Date | string;
+}
 
 // Props for the MessageBubble component
 interface MessageBubbleProps {
@@ -135,14 +164,13 @@ const MessageContent = ({ message, conversation }: { message: Message, conversat
               }
 
               return (
-                <a
-                  key={index}
-                  href={attachment.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="relative aspect-square w-full max-w-[300px] rounded-lg overflow-hidden bg-background/10 hover:bg-background/20 transition-colors"
-                >
-                  <div className="absolute inset-0">
+                <div key={index} className="relative w-full max-w-[300px] aspect-square">
+                  <a
+                    href={attachment.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block absolute inset-0 rounded-lg overflow-hidden bg-background/10 hover:bg-background/20 transition-colors"
+                  >
                     <Image
                       src={attachment.url}
                       alt={attachment.filename}
@@ -157,8 +185,8 @@ const MessageContent = ({ message, conversation }: { message: Message, conversat
                       }}
                       unoptimized={attachment.url.startsWith('https://storage.googleapis.com/') || attachment.url.startsWith('/api/emails/')}
                     />
-                  </div>
-                </a>
+                  </a>
+                </div>
               );
             }
 
@@ -851,6 +879,186 @@ export function MessageBubble({
       )}
       {/* Spacer after messages */}
       <div className="h-1 bg-background" />
+    </div>
+  );
+}
+
+function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: boolean; onClose: () => void }) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const { toast } = useToast();
+
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+      const response = await fetch(`/api/context/document/${doc.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete document');
+      }
+
+      toast({
+        description: "Document deleted successfully",
+      });
+      onClose();
+      window.location.reload();
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete document",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent 
+        className={cn(
+          "sm:max-w-3xl transition-all duration-300",
+          isExpanded ? "h-screen" : "h-[80vh]"
+        )}
+        aria-describedby="document-content"
+      >
+        <DialogHeader className="flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2 flex-1">
+            <DialogTitle className="flex items-center gap-2">
+              <span className="truncate">{doc.metadata?.title || doc.filename}</span>
+              <div className="flex gap-1">
+                {doc.hasEmbedding && (
+                  <Badge variant="secondary">
+                    <Icons.search className="h-3 w-3 mr-1" />
+                    Vector
+                  </Badge>
+                )}
+                {doc.hasAnalysis && (
+                  <Badge variant="secondary">
+                    <Icons.smile className="h-3 w-3 mr-1" />
+                    AI
+                  </Badge>
+                )}
+              </div>
+            </DialogTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="shrink-0"
+            >
+              <Icons.expand className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="shrink-0"
+            >
+              {isDeleting ? (
+                <Icons.arrowUp className="h-4 w-4 animate-spin" />
+              ) : (
+                <Icons.close className="h-4 w-4 text-red-500" />
+              )}
+            </Button>
+          </div>
+        </DialogHeader>
+        
+        <div id="document-content" className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+          {/* Preview */}
+          <div className="flex-1 min-w-0">
+            {doc.mimeType?.startsWith('image/') ? (
+              <div className="relative h-full">
+                {!imageError ? (
+                  <Image
+                    src={doc.url || ''}
+                    alt={doc.filename}
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    className="object-contain"
+                    onError={() => setImageError(true)}
+                    unoptimized={doc.url?.startsWith('https://storage.googleapis.com/')}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
+                    <Icons.file className="h-12 w-12 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground mt-2">Failed to load image</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <iframe
+                src={doc.url}
+                className="w-full h-full rounded-lg"
+                title={doc.filename}
+              />
+            )}
+          </div>
+
+          {/* Details */}
+          <div className="w-full md:w-80 flex-shrink-0 overflow-y-auto">
+            <DocumentDetails doc={doc} />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DocumentDetails({ doc }: { doc: Document }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h4 className="text-sm font-medium mb-2">Metadata</h4>
+        <div className="text-sm text-muted-foreground space-y-2">
+          {doc.metadata?.createdAt && (
+            <div>
+              <span className="font-medium">Created:</span>{" "}
+              {new Date(doc.metadata.createdAt).toLocaleDateString()}
+            </div>
+          )}
+          {doc.metadata?.pageCount && (
+            <div>
+              <span className="font-medium">Pages:</span> {doc.metadata.pageCount}
+            </div>
+          )}
+          {doc.metadata?.wordCount && (
+            <div>
+              <span className="font-medium">Words:</span> {doc.metadata.wordCount}
+            </div>
+          )}
+          {doc.metadata?.author && (
+            <div>
+              <span className="font-medium">Author:</span> {doc.metadata.author}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {doc.metadata?.summary && (
+        <div>
+          <h4 className="text-sm font-medium mb-2">Summary</h4>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {doc.metadata.summary}
+          </p>
+        </div>
+      )}
+
+      {doc.text && (
+        <div>
+          <h4 className="text-sm font-medium mb-2">Content</h4>
+          <div className="text-sm text-muted-foreground max-h-[400px] overflow-y-auto whitespace-pre-wrap">
+            {doc.text}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

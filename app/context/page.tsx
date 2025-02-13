@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useId } from "react";
 import { useSession } from "next-auth/react";
 import { redirect, useRouter } from "next/navigation";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,34 +19,20 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
-
-interface Document {
-  id: string;
-  sender?: string;
-  filename: string;
-  mimeType?: string;
-  url?: string;
-  metadata?: {
-    title?: string;
-    author?: string;
-    pageCount?: number;
-    summary?: string;
-    text?: string;
-    imageAnalysis?: string;
-    wordCount?: number;
-    createdAt?: string;
-  };
-  createdAt: Date | { toDate(): Date } | string;
-  hasEmbedding?: boolean;
-  hasAnalysis?: boolean;
-}
+import { ParsedDocument } from "@/types";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+import 'katex/dist/katex.min.css';
 
 interface ContextPageProps {
   searchParams: { [key: string]: string | undefined };
 }
 
 // Add new component for document details
-function DocumentDetails({ doc }: { doc: Document }) {
+function DocumentDetails({ doc }: { doc: ParsedDocument }) {
   return (
     <Accordion type="single" collapsible className="w-full">
       <AccordionItem value="metadata">
@@ -85,36 +71,33 @@ function DocumentDetails({ doc }: { doc: Document }) {
             Summary
           </AccordionTrigger>
           <AccordionContent>
-            <div className="text-sm prose dark:prose-invert max-w-none whitespace-pre-wrap">
-              {doc.metadata.summary}
+            <div className="text-sm prose dark:prose-invert max-w-none">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex, rehypeRaw]}
+              >
+                {doc.metadata.summary}
+              </ReactMarkdown>
             </div>
           </AccordionContent>
         </AccordionItem>
       )}
 
-      {doc.metadata?.text && (
+      {doc.text && (
         <AccordionItem value="content">
           <AccordionTrigger className="text-sm font-medium hover:no-underline hover:text-blue-500">
             Content
           </AccordionTrigger>
           <AccordionContent>
             <div className="max-h-96 overflow-y-auto">
-              <div className="text-sm prose dark:prose-invert max-w-none whitespace-pre-wrap">
-                {doc.metadata.text}
+              <div className="text-sm prose dark:prose-invert max-w-none [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_tr]:border [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_blockquote]:border-l-4 [&_blockquote]:border-muted [&_blockquote]:pl-4 [&_blockquote]:italic [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex, rehypeRaw]}
+                >
+                  {doc.text}
+                </ReactMarkdown>
               </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      )}
-
-      {doc.metadata?.imageAnalysis && (
-        <AccordionItem value="analysis">
-          <AccordionTrigger className="text-sm font-medium hover:no-underline hover:text-blue-500">
-            Image Analysis
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="text-sm prose dark:prose-invert max-w-none whitespace-pre-wrap">
-              {doc.metadata.imageAnalysis}
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -123,11 +106,12 @@ function DocumentDetails({ doc }: { doc: Document }) {
   );
 }
 
-function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: boolean; onClose: () => void }) {
+function DocumentViewModal({ doc, isOpen, onClose }: { doc: ParsedDocument; isOpen: boolean; onClose: () => void }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const contentId = useId();
 
   const handleDelete = async () => {
     try {
@@ -159,25 +143,22 @@ function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: bo
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className={cn(
-        "sm:max-w-3xl transition-all duration-300",
-        isExpanded ? "h-screen" : "h-[80vh]"
-      )}>
+      <DialogContent 
+        className={cn(
+          "sm:max-w-3xl transition-all duration-300",
+          isExpanded ? "h-screen" : "h-[80vh]"
+        )}
+        aria-describedby={contentId}
+      >
         <DialogHeader className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2 flex-1">
             <DialogTitle className="flex items-center gap-2">
               <span className="truncate">{doc.metadata?.title || doc.filename}</span>
               <div className="flex gap-1">
-                {doc.hasEmbedding && (
+                {doc.embedding && (
                   <Badge variant="secondary">
-                    <Icons.brain className="h-3 w-3 mr-1" />
+                    <Icons.search className="h-3 w-3 mr-1" />
                     Vector
-                  </Badge>
-                )}
-                {doc.hasAnalysis && (
-                  <Badge variant="secondary">
-                    <Icons.sparkles className="h-3 w-3 mr-1" />
-                    AI
                   </Badge>
                 )}
               </div>
@@ -208,35 +189,28 @@ function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: bo
           </div>
         </DialogHeader>
         
-        <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+        <div id={contentId} className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
           {/* Preview */}
-          <div className="flex-1 min-w-0">
-            {doc.mimeType?.startsWith('image/') ? (
-              <div className="relative h-full">
-                {!imageError ? (
-                  <Image
-                    src={doc.url || ''}
-                    alt={doc.filename}
-                    fill
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    className="object-contain"
-                    onError={() => setImageError(true)}
-                    unoptimized={doc.url?.startsWith('https://storage.googleapis.com/')}
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                    <Icons.imageOff className="h-12 w-12 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground mt-2">Failed to load image</p>
-                  </div>
-                )}
+          <div className="flex-1 min-w-0 relative">
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-muted">
+                <Icons.loader className="h-8 w-8 animate-spin" />
               </div>
-            ) : (
-              <iframe
-                src={doc.url}
-                className="w-full h-full rounded-lg"
-                title={doc.filename}
-              />
             )}
+            <iframe
+              src={doc.url}
+              className="w-full h-full rounded-lg border-0"
+              title={doc.filename}
+              onLoad={() => setIsLoading(false)}
+              onError={() => {
+                setIsLoading(false);
+                toast({
+                  title: "Error",
+                  description: "Failed to load document preview",
+                  variant: "destructive",
+                });
+              }}
+            />
           </div>
 
           {/* Details */}
@@ -249,7 +223,7 @@ function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: bo
   );
 }
 
-function DocumentCard({ doc, onView }: { doc: Document; onView: () => void }) {
+function DocumentCard({ doc, onView }: { doc: ParsedDocument; onView: () => void }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
@@ -285,20 +259,9 @@ function DocumentCard({ doc, onView }: { doc: Document; onView: () => void }) {
     <div className="group border rounded-xl overflow-hidden hover:border-blue-500/50 hover:shadow-lg transition-all duration-300 bg-card">
       {/* Document preview */}
       <div className="aspect-video bg-muted relative overflow-hidden">
-        {doc.mimeType?.startsWith('image/') ? (
-          <Image
-            src={doc.url || ''}
-            alt={doc.filename}
-            fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
-            unoptimized={doc.url?.startsWith('https://storage.googleapis.com/')}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Icons.file className="h-12 w-12 text-muted-foreground transition-transform duration-300 group-hover:scale-110" size={48} />
-          </div>
-        )}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Icons.file className="h-12 w-12 text-muted-foreground transition-transform duration-300 group-hover:scale-110" size={48} />
+        </div>
       </div>
 
       {/* Document info */}
@@ -308,16 +271,10 @@ function DocumentCard({ doc, onView }: { doc: Document; onView: () => void }) {
             {doc.metadata?.title || doc.filename}
           </h3>
           <div className="flex gap-1 ml-2">
-            {doc.hasEmbedding && (
+            {doc.embedding && (
               <Badge variant="secondary" className="h-5">
-                <Icons.brain className="h-3 w-3 mr-1" />
+                <Icons.search className="h-3 w-3 mr-1" />
                 Vector
-              </Badge>
-            )}
-            {doc.hasAnalysis && (
-              <Badge variant="secondary" className="h-5">
-                <Icons.sparkles className="h-3 w-3 mr-1" />
-                AI
               </Badge>
             )}
           </div>
@@ -339,18 +296,6 @@ function DocumentCard({ doc, onView }: { doc: Document; onView: () => void }) {
         >
           <Icons.search className="h-4 w-4 mr-2" size={16} />
           View
-        </Button>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          className="hover:scale-105 transition-transform"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDownloadDocument(doc);
-          }}
-        >
-          <Icons.arrowDown className="h-4 w-4 mr-2" size={16} />
-          Download
         </Button>
         <Button 
           variant="ghost" 
@@ -386,33 +331,18 @@ function formatDate(date: Date | { toDate(): Date } | string) {
   }
 }
 
-// Add handleDownloadDocument function at the top level
-async function handleDownloadDocument(doc: Document) {
-  try {
-    // Create a temporary anchor element
-    const link = document.createElement('a');
-    link.href = doc.url || '';
-    link.download = doc.filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  } catch (error) {
-    console.error('[Download] Error:', error);
-    throw new Error('Failed to download document. Please try again.');
-  }
-}
-
 export default function ContextPage({ searchParams }: ContextPageProps) {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<ParsedDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<ParsedDocument | null>(null);
+  const [collapsedSenders, setCollapsedSenders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -504,37 +434,26 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
     }
   }
 
-  // Group documents by sender
-  const documentsBySender = documents.reduce((acc: Record<string, Document[]>, doc) => {
-    const sender = doc.sender || 'You';
-    if (!acc[sender]) {
-      acc[sender] = [];
-    }
-    acc[sender].push(doc);
-    return acc;
-  }, {});
+  // Update the documentsBySender type to be more flexible
+  const documentsBySender: { [key: string]: ParsedDocument[] } = {
+    'You': documents
+  };
 
   // Move "You" to the top if it exists
-  const sortedSenders = Object.keys(documentsBySender).sort((a, b) => {
-    if (a === 'You') return -1;
-    if (b === 'You') return 1;
-    return a.localeCompare(b);
-  });
+  const sortedSenders = ['You'];
 
-  const handleViewDocument = useCallback(async (doc: Document) => {
-    try {
-      const response = await fetch(`/api/context/document/${doc.id}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch document content');
+  // Add toggle handler
+  const toggleSenderCollapse = (sender: string) => {
+    setCollapsedSenders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sender)) {
+        newSet.delete(sender);
+      } else {
+        newSet.add(sender);
       }
-      const data = await response.json();
-      // Open document content in a new tab
-      window.open(doc.url, '_blank');
-    } catch (error) {
-      console.error('[View] Error:', error);
-      setError('Failed to view document. Please try again.');
-    }
-  }, []);
+      return newSet;
+    });
+  };
 
   // Don't render anything while checking auth
   if (status === 'loading' || isLoading) {
@@ -600,16 +519,35 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
           {sortedSenders.map((sender) => (
             <div key={sender} className="space-y-6">
               {/* Sender header */}
-              <div className="flex items-center gap-3">
+              <div 
+                className="flex items-center gap-3 cursor-pointer select-none" 
+                onClick={() => toggleSenderCollapse(sender)}
+              >
                 <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium shadow-sm">
                   {sender === 'You' ? 'Y' : sender[0]}
                 </div>
                 <h2 className="text-lg font-medium">{sender}</h2>
+                <div className="flex items-center ml-2">
+                  <Icons.arrowDown 
+                    className={cn(
+                      "h-4 w-4 transition-transform",
+                      !collapsedSenders.has(sender) ? "-rotate-180" : ""
+                    )}
+                  />
+                </div>
+                <span className="text-sm text-muted-foreground ml-2">
+                  {documentsBySender[sender].length} document{documentsBySender[sender].length !== 1 ? 's' : ''}
+                </span>
               </div>
 
               {/* Documents grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {documentsBySender[sender].map((doc: Document) => (
+              <div 
+                className={cn(
+                  "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-300",
+                  collapsedSenders.has(sender) && "hidden"
+                )}
+              >
+                {documentsBySender[sender].map((doc: ParsedDocument) => (
                   <DocumentCard 
                     key={doc.id} 
                     doc={doc} 

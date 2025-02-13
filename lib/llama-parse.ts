@@ -1,18 +1,8 @@
 import { adminDb, adminStorage } from './firebase-admin';
 import { OpenAIService } from './openai';
-
-interface ParsedDocument {
-  text: string;
-  metadata: {
-    title: string;
-    author?: string;
-    createdAt?: string;
-    pageCount?: number;
-    wordCount?: number;
-    summary?: string;
-  };
-  embedding?: number[];
-}
+import { ParsedDocument } from '@/types';
+import FormData from 'form-data';
+import fetch from 'node-fetch';
 
 export class LlamaParseService {
   private userId: string;
@@ -25,7 +15,30 @@ export class LlamaParseService {
     this.openAIService = openAIService;
   }
 
-  private async uploadToFirebase(parsedDoc: ParsedDocument, filename: string) {
+  private cleanUndefinedValues(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.cleanUndefinedValues(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        const cleanedValue = this.cleanUndefinedValues(value);
+        if (cleanedValue !== undefined && cleanedValue !== null) {
+          cleaned[key] = cleanedValue;
+        }
+      }
+      return cleaned;
+    }
+    
+    return obj;
+  }
+
+  private async uploadToFirebase(parsedDoc: Omit<ParsedDocument, 'id'>, filename: string) {
     try {
       // Store the parsed content and metadata
       const docRef = adminDb
@@ -34,44 +47,20 @@ export class LlamaParseService {
         .collection('documents')
         .doc();
 
-      await docRef.set({
+      // Clean undefined values before storing
+      const cleanedDoc = this.cleanUndefinedValues({
         ...parsedDoc,
-        filename,
-        userId: this.userId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        id: docRef.id,
       });
+
+      console.log('[LlamaParse] Storing cleaned document:', cleanedDoc);
+
+      await docRef.set(cleanedDoc);
 
       return docRef.id;
     } catch (error) {
-      console.error('Error uploading to Firebase:', error);
+      console.error('[LlamaParse] Error uploading to Firebase:', error);
       throw new Error('Failed to store parsed document');
-    }
-  }
-
-  private async generateSummary(text: string): Promise<string> {
-    try {
-      const response = await fetch('https://api.cloud.llamaindex.ai/api/summarize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          text,
-          max_tokens: 500,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.summary;
-    } catch (error) {
-      console.error('Error generating summary:', error);
-      throw new Error('Failed to generate document summary');
     }
   }
 
@@ -87,6 +76,10 @@ export class LlamaParseService {
         .get();
 
       if (!existingDocs.empty) {
+        console.log('[LlamaParse] Document already exists:', {
+          id: existingDocs.docs[0].id,
+          filename
+        });
         return existingDocs.docs[0].id;
       }
 
@@ -95,6 +88,18 @@ export class LlamaParseService {
       const file = bucket.file(fileUrl);
       const [metadata] = await file.getMetadata();
       
+      console.log('[LlamaParse] Processing file:', {
+        filename,
+        size: metadata.size,
+        contentType: metadata.contentType
+      });
+
+      // Get the public URL for the file
+      const [publicUrl] = await file.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
       // Check file size (metadata.size is in bytes)
       const fileSizeInMB = Number(metadata.size || 0) / (1024 * 1024);
       if (fileSizeInMB > 50) {
@@ -106,31 +111,37 @@ export class LlamaParseService {
 
       // Create form data with proper headers
       const formData = new FormData();
-      const blob = new Blob([fileContent], { type: metadata.contentType || 'application/pdf' });
-      formData.append('file', blob, filename);
+      formData.append('file', fileContent, {
+        filename,
+        contentType: metadata.contentType || 'application/pdf'
+      });
 
-      // Parse document using LlamaParse
+      console.log('[LlamaParse] Uploading file to LlamaParse API');
+
+      // Parse document using LlamaParse REST API
       const response = await fetch('https://api.cloud.llamaindex.ai/api/parsing/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Accept': 'application/json',
+          ...formData.getHeaders()
         },
         body: formData
       });
 
+      const responseData = await response.json();
+      console.log('[LlamaParse] Upload response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: responseData
+      });
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error('LlamaParse API error:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        });
         throw new Error(`LlamaParse API error: ${response.status} ${response.statusText}`);
       }
 
-      const jobData = await response.json();
-      const jobId = jobData.job_id;
+      const jobId = responseData.id;
+      console.log('[LlamaParse] Job created:', { jobId });
 
       // Poll for job completion with exponential backoff
       let delay = 1000; // Start with 1 second
@@ -138,6 +149,8 @@ export class LlamaParseService {
       const maxAttempts = 30;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        console.log('[LlamaParse] Checking job status:', { attempt, jobId });
+
         const statusResponse = await fetch(`https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}`, {
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
@@ -145,21 +158,24 @@ export class LlamaParseService {
           }
         });
 
+        const statusData = await statusResponse.json().catch(() => null);
+        console.log('[LlamaParse] Job status response:', {
+          attempt,
+          status: statusResponse.status,
+          statusText: statusResponse.statusText,
+          data: statusData
+        });
+
         if (!statusResponse.ok) {
-          console.error('Job status check failed:', {
-            attempt,
-            status: statusResponse.status,
-            statusText: statusResponse.statusText
-          });
           throw new Error(`Failed to check job status: ${statusResponse.status}`);
         }
 
-        const status = await statusResponse.json();
-        
-        if (status.status === 'completed') {
+        if (statusData.status === 'SUCCESS') {
+          console.log('[LlamaParse] Job completed successfully, fetching results');
+
           // Get the results in markdown format
           const resultResponse = await fetch(
-            `https://api.cloud.llamaindex.ai/api/parsing/job/${jobId}/result/markdown`,
+            `https://api.cloud.llamaindex.ai/api/v1/parsing/job/${jobId}/result/markdown`,
             {
               headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
@@ -173,55 +189,119 @@ export class LlamaParseService {
           }
 
           const parsedData = await resultResponse.json();
-
-          // Generate summary using LlamaParse's built-in summarization
-          const summaryResponse = await fetch('https://api.cloud.llamaindex.ai/api/summarize', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${this.apiKey}`,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: JSON.stringify({
-              text: parsedData.text,
-              max_tokens: 500,
-            }),
+          console.log('[LlamaParse] Parsed content:', {
+            metadata: parsedData.job_metadata,
+            textPreview: parsedData.markdown?.substring(0, 500) + '...',
+            fullLength: parsedData.markdown?.length
           });
 
-          if (!summaryResponse.ok) {
-            console.error('Summary generation failed:', await summaryResponse.text());
-            throw new Error(`Failed to generate summary: ${summaryResponse.status}`);
-          }
+          // Try to generate summary, but don't fail if it doesn't work
+          let summary = '';
+          try {
+            console.log('[LlamaParse] Generating summary');
+            const summaryResponse = await fetch('https://api.cloud.llamaindex.ai/api/v1/summarize', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: JSON.stringify({
+                text: parsedData.markdown,
+                max_tokens: 500,
+              }),
+            });
 
-          const summaryData = await summaryResponse.json();
+            if (summaryResponse.ok) {
+              const summaryData = await summaryResponse.json();
+              summary = summaryData.summary;
+              console.log('[LlamaParse] Summary generated:', {
+                summary: summaryData.summary,
+                length: summaryData.summary?.length
+              });
+            } else {
+              console.log('[LlamaParse] Summary generation skipped:', await summaryResponse.text());
+            }
+          } catch (error) {
+            console.error('[LlamaParse] Error generating summary:', error);
+          }
 
           // Generate embedding if OpenAI service is available
           let embedding;
           if (this.openAIService) {
             try {
+              console.log('[LlamaParse] Generating embedding');
               embedding = await this.openAIService.generateEmbedding(
-                `${parsedData.metadata?.title || filename}\n${summaryData.summary}\n${parsedData.text.substring(0, 8000)}`
+                `${parsedData.job_metadata?.title || filename}\n${summary}\n${parsedData.markdown?.substring(0, 8000)}`
               );
+              console.log('[LlamaParse] Embedding generated');
             } catch (error) {
-              console.error('Error generating embedding:', error);
+              console.error('[LlamaParse] Error generating embedding:', error);
             }
           }
 
-          const parsedDoc: ParsedDocument = {
-            text: parsedData.text,
-            metadata: {
-              title: parsedData.metadata?.title || filename,
-              author: parsedData.metadata?.author,
-              createdAt: parsedData.metadata?.createdAt,
-              pageCount: parsedData.metadata?.pageCount || 1,
-              wordCount: parsedData.text.split(/\s+/).length,
-              summary: summaryData.summary,
-            },
-            embedding,
+          // Create base metadata without optional fields
+          interface DocumentMetadata {
+            title: string;
+            createdAt: string;
+            pageCount: number;
+            wordCount: number;
+            author?: string;
+            summary?: string;
+          }
+
+          const metadata: DocumentMetadata = {
+            title: parsedData.job_metadata?.title || filename,
+            createdAt: new Date().toISOString(),
+            pageCount: 1,
+            wordCount: (parsedData.markdown?.split(/\s+/).length || 0)
           };
+
+          // Add optional metadata fields only if they exist
+          if (parsedData.job_metadata?.author) {
+            metadata.author = parsedData.job_metadata.author;
+          }
+          if (parsedData.job_metadata?.createdAt) {
+            metadata.createdAt = new Date(parsedData.job_metadata.createdAt).toISOString();
+          }
+          if (summary) {
+            metadata.summary = summary;
+          }
+
+          // Create base document without optional fields
+          interface ParsedDocumentData {
+            text: string;
+            metadata: DocumentMetadata;
+            filename: string;
+            userId: string;
+            createdAt: string;
+            updatedAt: string;
+            embedding?: number[];
+            url: string;
+          }
+
+          const parsedDoc: ParsedDocumentData = {
+            text: parsedData.markdown || '',
+            metadata,
+            filename,
+            userId: this.userId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            url: publicUrl,
+          };
+
+          // Add embedding only if it exists
+          if (embedding) {
+            parsedDoc.embedding = embedding;
+          }
 
           // Store in Firebase
           const docId = await this.uploadToFirebase(parsedDoc, filename);
+          console.log('[LlamaParse] Document stored in Firebase:', {
+            docId,
+            metadata: parsedDoc.metadata,
+            url: publicUrl
+          });
 
           // Log successful parsing
           await adminDb.collection('logs').add({
@@ -233,7 +313,7 @@ export class LlamaParseService {
           });
 
           return docId;
-        } else if (status.status === 'failed') {
+        } else if (statusData.status === 'FAILED') {
           throw new Error('Parsing job failed');
         }
 
@@ -245,7 +325,11 @@ export class LlamaParseService {
       throw new Error('Parsing timed out');
 
     } catch (error: any) {
-      console.error('Error parsing document:', error);
+      console.error('[LlamaParse] Error parsing document:', {
+        error: error.message,
+        filename,
+        stack: error.stack
+      });
 
       // Log error
       await adminDb.collection('errors').add({

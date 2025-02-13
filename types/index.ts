@@ -103,9 +103,11 @@ export interface ParsedDocument {
     createdAt?: string;
     pageCount?: number;
     wordCount?: number;
+    summary?: string;
   };
   embedding?: number[];
   filename: string;
+  url?: string;
   userId: string;
   createdAt: string;
   updatedAt: string;
