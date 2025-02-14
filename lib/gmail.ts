@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { adminDb } from './firebase-admin';
 import { gmail_v1 } from 'googleapis';
+import { adminStorage } from './firebase-admin';
 
 export class GmailService {
   private gmail: gmail_v1.Gmail;
@@ -25,9 +26,20 @@ export class GmailService {
       const from = headers.find((h: any) => h.name === 'From')?.value;
       const to = headers.find((h: any) => h.name === 'To')?.value?.split(',').map((e: string) => e.trim());
       
+      // Check if this is a sent message
+      const isSentMessage = message.labelIds?.includes('SENT');
+      
+      // For sent messages, use 'You' as sender
+      // For received messages, extract the email from the From header
+      const effectiveSender = isSentMessage 
+        ? 'You'
+        : from.includes('<') 
+          ? from.match(/<(.+?)>/)?.[1] || from 
+          : from;
+
       let textBody = '';
       let htmlBody = '';
-      const attachments: { filename: string; mimeType: string; url: string; attachmentId: string; }[] = [];
+      const attachments: { filename: string; mimeType: string; url: string; attachmentId: string; part: any }[] = [];
       
       // Helper function to decode parts recursively
       const decodeParts = (parts: any[]) => {
@@ -37,23 +49,20 @@ export class GmailService {
           } else if (part.mimeType === 'text/html') {
             htmlBody = Buffer.from(part.body.data, 'base64').toString();
           } else if (part.filename && part.body?.attachmentId) {
-            // Use our API endpoint for attachments
-            const extension = part.filename.split('.').pop() || '';
-            const attachmentUrl = `/api/emails/${message.id}/attachments/${part.body.attachmentId}${extension ? `.${extension}` : ''}`;
+            // Store the entire part object for later use
+            attachments.push({
+              filename: part.filename,
+              mimeType: part.mimeType,
+              url: `/api/emails/${message.id}/attachments/${part.body.attachmentId}`,
+              attachmentId: part.body.attachmentId,
+              part: part
+            });
             
-            // Log the attachment details
             console.log('[GmailService] Found attachment:', {
               filename: part.filename,
               mimeType: part.mimeType,
               attachmentId: part.body.attachmentId,
-              url: attachmentUrl
-            });
-
-            attachments.push({
-              filename: part.filename,
-              mimeType: part.mimeType,
-              url: attachmentUrl,
-              attachmentId: part.body.attachmentId
+              from: effectiveSender
             });
           }
           
@@ -97,15 +106,16 @@ export class GmailService {
         messageId: message.id,
         threadId: message.threadId,
         subject,
-        from,
+        from: effectiveSender,
         to: to?.length,
-        attachments: attachments.length
+        attachments: attachments.length,
+        isSentMessage
       });
 
       return {
         messageId: message.id,
         threadId: message.threadId,
-        from,
+        from: effectiveSender,
         to,
         subject,
         body: textBody,
@@ -129,19 +139,177 @@ export class GmailService {
     throw error;
   }
 
+  private async processAttachment(
+    userId: string,
+    messageId: string,
+    attachment: { filename: string; mimeType: string; attachmentId: string; part: any },
+    sender: string,
+    isSentMessage: boolean = false
+  ) {
+    try {
+      // Clean up sender format - extract just the email or name
+      // For sent messages, use 'You' as the sender
+      const cleanSender = isSentMessage 
+        ? 'You'
+        : sender.includes('<') 
+          ? sender.match(/<(.+?)>/)?.[1] || sender 
+          : sender === 'me' || sender === 'You' 
+            ? 'You' 
+            : sender;
+
+      console.log('[GmailService] Processing attachment:', {
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        from: cleanSender,
+        isSentMessage
+      });
+
+      // Get the attachment data
+      const attachmentData = await this.getAttachment(messageId, attachment);
+      if (!attachmentData) {
+        throw new Error('Failed to get attachment data');
+      }
+
+      // Upload to Firebase Storage
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `users/${userId}/emails/${timestamp}-${attachment.filename}`;
+      const bucket = adminStorage.bucket();
+      const fileRef = bucket.file(fileName);
+
+      await fileRef.save(attachmentData.data, {
+        metadata: {
+          contentType: attachment.mimeType,
+          metadata: {
+            originalName: attachment.filename,
+            size: attachmentData.data.length,
+            uploadedBy: cleanSender,
+            uploadedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      // Make the file publicly accessible
+      await fileRef.makePublic();
+      const publicUrl = fileRef.publicUrl();
+
+      // Check if we already have this document - check by filename only
+      const existingDocs = await adminDb
+        .collection('users')
+        .doc(userId)
+        .collection('documents')
+        .where('filename', '==', attachment.filename)
+        .get();
+
+      // Check if any existing document has the same content length
+      const hasDuplicate = existingDocs.docs.some(doc => {
+        const metadata = doc.data().metadata;
+        return metadata?.size === attachmentData.data.length;
+      });
+
+      if (hasDuplicate) {
+        console.log('[GmailService] Document already exists (same name and size):', {
+          filename: attachment.filename,
+          sender: cleanSender
+        });
+        return;
+      }
+
+      // Initialize services
+      let openAIService;
+      let llamaParseService;
+
+      if (process.env.OPENAI_API_KEY) {
+        const { OpenAIService } = await import('./openai');
+        openAIService = new OpenAIService(userId);
+      }
+
+      if (process.env.LLAMA_PARSE_API_KEY) {
+        const { LlamaParseService } = await import('./llama-parse');
+        llamaParseService = new LlamaParseService(
+          process.env.LLAMA_PARSE_API_KEY,
+          userId,
+          openAIService
+        );
+      }
+
+      // Process based on type
+      if (attachment.mimeType.startsWith('image/') && openAIService) {
+        // Process image with GPT-4 Vision
+        const analysis = await openAIService.analyzeImage(publicUrl);
+        
+        // Store in documents collection
+        await adminDb
+          .collection('users')
+          .doc(userId)
+          .collection('documents')
+          .add({
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            url: publicUrl,
+            text: analysis,
+            sender: cleanSender,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            userId,
+            metadata: {
+              size: attachmentData.data.length,
+              uploadedAt: new Date().toISOString()
+            }
+          });
+
+      } else if (attachment.mimeType === 'application/pdf' && llamaParseService) {
+        // Process PDF with LlamaParse
+        await llamaParseService.parseDocument(fileName, attachment.filename, cleanSender);
+      }
+
+      console.log('[GmailService] Successfully processed attachment:', {
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        from: cleanSender,
+        size: attachmentData.data.length
+      });
+
+    } catch (error) {
+      console.error('[GmailService] Error processing attachment:', {
+        filename: attachment.filename,
+        error
+      });
+      // Continue with other attachments even if one fails
+    }
+  }
+
   async syncEmails(userId: string) {
     try {
       console.log('[GmailService] Starting email sync for user:', userId);
       
-      // Get the last sync timestamp from Firestore
+      // Get or create processing lock
       const userRef = adminDb.collection('users').doc(userId);
+      const lockRef = userRef.collection('locks').doc('emailSync');
+      
+      // Try to acquire lock
+      const lockDoc = await lockRef.get();
+      const now = new Date();
+      const lockExpiry = lockDoc.exists ? lockDoc.data()?.expiresAt?.toDate() : null;
+      
+      if (lockDoc.exists && lockExpiry && lockExpiry > now) {
+        console.log('[GmailService] Sync already in progress, skipping');
+        return true;
+      }
+
+      // Set lock for 5 minutes
+      await lockRef.set({
+        startedAt: now,
+        expiresAt: new Date(now.getTime() + 5 * 60 * 1000)
+      });
+      
+      // Get the last sync timestamp from Firestore
       const userDoc = await userRef.get();
       const lastSyncTime = userDoc.data()?.lastEmailSync?.toDate() || new Date(0);
       
       console.log('[GmailService] Last sync time:', lastSyncTime);
 
-      // Only fetch emails after the last sync
-      const query = `in:inbox after:${Math.floor(lastSyncTime.getTime() / 1000)}`;
+      // Query for both inbox and sent messages after last sync
+      const query = `in:inbox OR in:sent after:${Math.floor(lastSyncTime.getTime() / 1000)}`;
       let pageToken: string | undefined;
       const emailsRef = adminDb.collection('users').doc(userId).collection('emails');
       let totalProcessed = 0;
@@ -167,20 +335,43 @@ export class GmailService {
           try {
             if (!message.id) return false;
             
+            // Check if message already processed
+            const existingEmail = await emailsRef.doc(message.id).get();
+            if (existingEmail.exists) {
+              console.log('[GmailService] Message already processed:', message.id);
+              return true;
+            }
+            
             console.log('[GmailService] Fetching full message:', message.id);
             const fullMessage = await this.gmail.users.messages.get({
               userId: 'me',
               id: message.id,
+              format: 'full'
             });
 
             if (!fullMessage.data) return false;
 
             const emailData = this.decodeMessage(fullMessage.data);
+            
+            // Store email in Firestore
             await emailsRef.doc(emailData.messageId).set({
               ...emailData,
               userId,
               updatedAt: new Date(),
             }, { merge: true });
+
+            // Process attachments if any
+            if (emailData.attachments?.length) {
+              for (const attachment of emailData.attachments) {
+                await this.processAttachment(
+                  userId,
+                  emailData.messageId,
+                  attachment,
+                  emailData.from,
+                  emailData.labels?.includes('SENT')
+                );
+              }
+            }
 
             return true;
           } catch (error) {
@@ -204,10 +395,11 @@ export class GmailService {
         pageToken = response.data.nextPageToken || undefined;
       } while (pageToken && totalProcessed < 100); // Limit total emails per sync
 
-      // Update last sync time
+      // Update last sync time and release lock
       await userRef.update({
         lastEmailSync: new Date(),
       });
+      await lockRef.delete();
 
       console.log('[GmailService] Email sync completed successfully');
       return true;
@@ -251,6 +443,35 @@ export class GmailService {
         contentLength: content?.length,
         hasAttachments: !!attachments?.length 
       });
+
+      // Get attachment data before sending email
+      const attachmentBuffers: { [key: string]: Buffer } = {};
+      
+      if (attachments?.length) {
+        for (const attachment of attachments) {
+          console.log('[GmailService] Processing attachment:', attachment.filename);
+          
+          // Handle local file URLs differently
+          let buffer: Buffer;
+          if (attachment.url.startsWith('/')) {
+            // For local files, read directly from storage
+            const bucket = adminStorage.bucket();
+            const filePath = attachment.url.replace(/^\//, ''); // Remove leading slash
+            const [fileContent] = await bucket.file(filePath).download();
+            buffer = fileContent;
+          } else {
+            // For remote URLs, fetch the content
+            const response = await fetch(attachment.url);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch attachment: ${response.statusText}`);
+            }
+            buffer = Buffer.from(await response.arrayBuffer());
+          }
+          
+          // Store buffer for later use
+          attachmentBuffers[attachment.filename] = buffer;
+        }
+      }
 
       // Get the original message to get subject and message IDs
       const thread = await this.gmail.users.threads.get({
@@ -310,27 +531,16 @@ export class GmailService {
       // Add attachments if any
       if (attachments?.length) {
         for (const attachment of attachments) {
-          try {
-            console.log('[GmailService] Processing attachment:', attachment.filename);
-            const response = await fetch(attachment.url);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch attachment: ${response.statusText}`);
-            }
-            const buffer = Buffer.from(await response.arrayBuffer());
-
-            emailParts.push(
-              '',
-              `--${mixedBoundary}`,
-              `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
-              'Content-Transfer-Encoding: base64',
-              `Content-Disposition: attachment; filename="${attachment.filename}"`,
-              '',
-              buffer.toString('base64').replace(/(.{76})/g, '$1\r\n')
-            );
-          } catch (error) {
-            console.error('[GmailService] Error processing attachment:', error);
-            throw error;
-          }
+          const buffer = attachmentBuffers[attachment.filename];
+          emailParts.push(
+            '',
+            `--${mixedBoundary}`,
+            `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
+            'Content-Transfer-Encoding: base64',
+            `Content-Disposition: attachment; filename="${attachment.filename}"`,
+            '',
+            buffer.toString('base64').replace(/(.{76})/g, '$1\r\n')
+          );
         }
       }
 
@@ -419,6 +629,109 @@ export class GmailService {
         .doc(response.data.id!)
         .set(messageData);
 
+      // After successful send, process the attachments for indexing using the data we already have
+      if (attachments?.length && response.data.id) {
+        for (const attachment of attachments) {
+          const buffer = attachmentBuffers[attachment.filename];
+          
+          // Upload to Firebase Storage
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const fileName = `users/${userId}/emails/${timestamp}-${attachment.filename}`;
+          const bucket = adminStorage.bucket();
+          const fileRef = bucket.file(fileName);
+
+          await fileRef.save(buffer, {
+            metadata: {
+              contentType: attachment.mimeType,
+              metadata: {
+                originalName: attachment.filename,
+                size: buffer.length,
+                uploadedBy: 'You',
+                uploadedAt: new Date().toISOString(),
+              },
+            },
+          });
+
+          // Make the file publicly accessible
+          await fileRef.makePublic();
+          const publicUrl = fileRef.publicUrl();
+
+          // Check for duplicates
+          const existingDocs = await adminDb
+            .collection('users')
+            .doc(userId)
+            .collection('documents')
+            .where('filename', '==', attachment.filename)
+            .get();
+
+          // Check if any existing document has the same content length
+          const hasDuplicate = existingDocs.docs.some(doc => {
+            const metadata = doc.data().metadata;
+            return metadata?.size === buffer.length;
+          });
+
+          if (hasDuplicate) {
+            console.log('[GmailService] Document already exists (same name and size):', {
+              filename: attachment.filename,
+              sender: 'You'
+            });
+            continue;
+          }
+
+          // Initialize services
+          let openAIService;
+          let llamaParseService;
+
+          if (process.env.OPENAI_API_KEY) {
+            const { OpenAIService } = await import('./openai');
+            openAIService = new OpenAIService(userId);
+          }
+
+          if (process.env.LLAMA_PARSE_API_KEY) {
+            const { LlamaParseService } = await import('./llama-parse');
+            llamaParseService = new LlamaParseService(
+              process.env.LLAMA_PARSE_API_KEY,
+              userId,
+              openAIService
+            );
+          }
+
+          // Process based on type
+          if (attachment.mimeType.startsWith('image/') && openAIService) {
+            // Process image with GPT-4 Vision
+            const analysis = await openAIService.analyzeImage(publicUrl);
+            
+            await adminDb
+              .collection('users')
+              .doc(userId)
+              .collection('documents')
+              .add({
+                filename: attachment.filename,
+                mimeType: attachment.mimeType,
+                url: publicUrl,
+                text: analysis,
+                sender: 'You',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                userId,
+                metadata: {
+                  size: buffer.length,
+                  uploadedAt: new Date().toISOString()
+                }
+              });
+          } else if (attachment.mimeType === 'application/pdf' && llamaParseService) {
+            // Process PDF with LlamaParse
+            await llamaParseService.parseDocument(fileName, attachment.filename, 'You');
+          }
+
+          console.log('[GmailService] Successfully processed sent attachment:', {
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            size: buffer.length
+          });
+        }
+      }
+
       return response.data;
     } catch (error) {
       console.error('[GmailService] Error sending reply:', error);
@@ -472,84 +785,19 @@ export class GmailService {
     }
   }
 
-  async getAttachment(messageId: string, attachmentId: string) {
+  async getAttachment(messageId: string, attachment: { attachmentId: string; part: any }) {
     try {
-      console.log('[GmailService] Fetching attachment:', { messageId, attachmentId });
-      
-      // First get the message to verify the attachment exists
-      const message = await this.gmail.users.messages.get({
-        userId: 'me',
-        id: messageId,
-        format: 'full'
-      });
-
-      console.log('[GmailService] Message retrieved:', {
-        id: message.data.id,
-        hasParts: !!message.data.payload?.parts,
-        partsCount: message.data.payload?.parts?.length
-      });
-
-      // Helper function to normalize base64url to match Gmail's format
-      const normalizeId = (id: string) => {
-        // Remove any file extension
-        id = id.replace(/\.[^/.]+$/, "");
-        // Convert URL-safe characters back to base64 standard
-        return id.replace(/-/g, '+').replace(/_/g, '/');
-      };
-
-      // Find the attachment part
-      const findAttachmentPart = (parts: any[]): any => {
-        for (const part of parts) {
-          console.log('[GmailService] Checking part:', {
-            filename: part.filename,
-            mimeType: part.mimeType,
-            hasAttachmentId: !!part.body?.attachmentId,
-            attachmentId: part.body?.attachmentId
-          });
-
-          if (part.body?.attachmentId) {
-            // Compare normalized IDs
-            const normalizedPartId = normalizeId(part.body.attachmentId);
-            const normalizedRequestId = normalizeId(attachmentId);
-            if (normalizedPartId === normalizedRequestId) {
-              return part;
-            }
-          }
-          if (part.parts) {
-            const found = findAttachmentPart(part.parts);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-
-      const attachmentPart = message.data.payload?.parts ? 
-        findAttachmentPart(message.data.payload.parts) : null;
-
-      if (!attachmentPart) {
-        console.error('[GmailService] Attachment not found in message parts:', {
-          messageId,
-          attachmentId,
-          availableParts: message.data.payload?.parts?.map(p => ({
-            filename: p.filename,
-            mimeType: p.mimeType,
-            attachmentId: p.body?.attachmentId
-          }))
-        });
-        throw new Error('Attachment not found');
-      }
-
-      console.log('[GmailService] Found attachment part:', {
-        filename: attachmentPart.filename,
-        mimeType: attachmentPart.mimeType,
-        attachmentId: attachmentPart.body.attachmentId
+      console.log('[GmailService] Getting attachment:', {
+        messageId,
+        attachmentId: attachment.attachmentId,
+        filename: attachment.part.filename
       });
 
       // Get the attachment data using the original attachment ID from the part
       const response = await this.gmail.users.messages.attachments.get({
         userId: 'me',
         messageId,
-        id: attachmentPart.body.attachmentId
+        id: attachment.attachmentId
       });
 
       if (!response.data.data) {
@@ -567,8 +815,8 @@ export class GmailService {
 
       return {
         data: buffer,
-        mimeType: attachmentPart.mimeType || 'application/octet-stream',
-        filename: attachmentPart.filename || 'attachment'
+        mimeType: attachment.part.mimeType || 'application/octet-stream',
+        filename: attachment.part.filename || 'attachment'
       };
     } catch (error: any) {
       console.error('[GmailService] Error fetching attachment:', {

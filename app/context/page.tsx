@@ -435,12 +435,39 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
   }
 
   // Update the documentsBySender type to be more flexible
-  const documentsBySender: { [key: string]: ParsedDocument[] } = {
-    'You': documents
-  };
+  const documentsBySender: { [key: string]: ParsedDocument[] } = documents.reduce((acc, doc) => {
+    // For context page, we want to organize by actual sender
+    // If the sender is the current user (me) or empty, put it under "You"
+    // Otherwise use the cleaned sender email/name
+    const cleanSender = doc.sender === 'me' || !doc.sender
+      ? 'You'
+      : doc.sender.includes('<') 
+        ? doc.sender.match(/<(.+?)>/)?.[1] || doc.sender 
+        : doc.sender === 'You' 
+          ? doc.sender 
+          : doc.sender;
 
-  // Move "You" to the top if it exists
-  const sortedSenders = ['You'];
+    // Initialize array for this sender if it doesn't exist
+    if (!acc[cleanSender]) {
+      acc[cleanSender] = [];
+    }
+
+    // Add document to sender's array
+    acc[cleanSender].push({
+      ...doc,
+      // Preserve original sender in document
+      sender: doc.sender
+    });
+
+    return acc;
+  }, {} as { [key: string]: ParsedDocument[] });
+
+  // Sort senders alphabetically, but keep "You" at the top
+  const sortedSenders = Object.keys(documentsBySender).sort((a, b) => {
+    if (a === 'You') return -1;
+    if (b === 'You') return 1;
+    return a.localeCompare(b);
+  });
 
   // Add toggle handler
   const toggleSenderCollapse = (sender: string) => {
@@ -524,7 +551,7 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
                 onClick={() => toggleSenderCollapse(sender)}
               >
                 <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium shadow-sm">
-                  {sender === 'You' ? 'Y' : sender[0]}
+                  {sender === 'You' ? 'Y' : sender[0]?.toUpperCase()}
                 </div>
                 <h2 className="text-lg font-medium">{sender}</h2>
                 <div className="flex items-center ml-2">
@@ -634,7 +661,7 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
                   <div key={sender} className="flex items-center justify-between p-3 rounded-lg bg-muted">
                     <div className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium">
-                        {sender === 'You' ? 'Y' : sender[0]}
+                        {sender === 'You' ? 'Y' : sender[0]?.toUpperCase()}
                       </div>
                       <div>
                         <p className="font-medium">{sender}</p>

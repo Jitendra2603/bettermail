@@ -111,6 +111,7 @@ export interface ParsedDocument {
   userId: string;
   createdAt: string;
   updatedAt: string;
+  sender: string;
 }
 
 export interface UserContext {

@@ -64,7 +64,11 @@ export class LlamaParseService {
     }
   }
 
-  async parseDocument(fileUrl: string, filename: string): Promise<string> {
+  async parseDocument(
+    fileUrl: string, 
+    filename: string,
+    sender: string = 'You'
+  ): Promise<string> {
     try {
       // Check if document was already parsed
       const existingDocs = await adminDb
@@ -72,13 +76,15 @@ export class LlamaParseService {
         .doc(this.userId)
         .collection('documents')
         .where('filename', '==', filename)
+        .where('sender', '==', sender)
         .limit(1)
         .get();
 
       if (!existingDocs.empty) {
         console.log('[LlamaParse] Document already exists:', {
           id: existingDocs.docs[0].id,
-          filename
+          filename,
+          sender
         });
         return existingDocs.docs[0].id;
       }
@@ -278,6 +284,7 @@ export class LlamaParseService {
             updatedAt: string;
             embedding?: number[];
             url: string;
+            sender: string;
           }
 
           const parsedDoc: ParsedDocumentData = {
@@ -288,6 +295,7 @@ export class LlamaParseService {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             url: publicUrl,
+            sender,
           };
 
           // Add embedding only if it exists
@@ -300,7 +308,8 @@ export class LlamaParseService {
           console.log('[LlamaParse] Document stored in Firebase:', {
             docId,
             metadata: parsedDoc.metadata,
-            url: publicUrl
+            url: publicUrl,
+            sender
           });
 
           // Log successful parsing

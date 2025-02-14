@@ -37,24 +37,54 @@ export class OpenAIService {
   }
 
   private async trackCost(model: keyof typeof COSTS, inputTokens: number, outputTokens: number = 0) {
-    const cost = model === 'embedding' 
-      ? COSTS[model] * (inputTokens / 1000)
-      : (COSTS[model].input * (inputTokens / 1000)) + (COSTS[model].output * (outputTokens / 1000));
+    try {
+      const cost = model === 'embedding' 
+        ? COSTS[model] * (inputTokens / 1000)
+        : (COSTS[model].input * (inputTokens / 1000)) + (COSTS[model].output * (outputTokens / 1000));
 
-    await adminDb.collection('users').doc(this.userId).collection('usage').add({
-      timestamp: new Date(),
-      model,
-      inputTokens,
-      outputTokens,
-      cost
-    });
+      // Get user reference
+      const userRef = adminDb.collection('users').doc(this.userId);
+      
+      // Get or create user document with usage data
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        await userRef.set({
+          usage: {
+            totalCost: cost,
+            totalTokens: inputTokens + outputTokens,
+            lastUsed: new Date()
+          }
+        });
+        return;
+      }
 
-    // Update total usage
-    await adminDb.collection('users').doc(this.userId).update({
-      'usage.totalCost': adminDb.FieldValue.increment(cost),
-      'usage.totalTokens': adminDb.FieldValue.increment(inputTokens + outputTokens),
-      'usage.lastUsed': new Date()
-    });
+      // Get current usage data
+      const userData = userDoc.data();
+      const currentUsage = userData?.usage || {
+        totalCost: 0,
+        totalTokens: 0
+      };
+
+      // Update usage with new values
+      await userRef.update({
+        'usage.totalCost': currentUsage.totalCost + cost,
+        'usage.totalTokens': currentUsage.totalTokens + inputTokens + outputTokens,
+        'usage.lastUsed': new Date()
+      });
+
+      // Log individual usage
+      await userRef.collection('usage').add({
+        timestamp: new Date(),
+        model,
+        inputTokens,
+        outputTokens,
+        cost
+      });
+
+    } catch (error) {
+      console.error('[OpenAI] Error tracking cost:', error);
+      // Don't throw error - allow operation to continue even if tracking fails
+    }
   }
 
   private async checkRateLimit() {
