@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "bettermail-cb010"
-  }
+  },
+  "targets": {
+    "bettermail-cb010": {
+      "hosting": {
+        "messages-lu-vg": [
+          "messages-lu-vg"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

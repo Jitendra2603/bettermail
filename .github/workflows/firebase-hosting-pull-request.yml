@@ -27,9 +27,10 @@ jobs:
       FIREBASE_ADMIN_PRIVATE_KEY: ${{ secrets.FIREBASE_ADMIN_PRIVATE_KEY }}
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-      NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+      NEXTAUTH_URL: https://messages.lu.vg
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
       NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
     steps:
       - uses: actions/checkout@v4
       
@@ -60,3 +61,5 @@ jobs:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BETTERMAIL_CB010 }}
           projectId: bettermail-cb010
+          target: messages-lu-vg
+          firebaseHostingSite: messages-lu-vg

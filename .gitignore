@@ -75,3 +75,7 @@ ehthumbs.db
 Thumbs.db
 .cursorrules
 .cursorignore
+PRD-AI-EMAIL-RESPONSE.md
+PROJECT_STRUCTURE.md
+set-secrets.ps1
+setup-firebase.ps1
