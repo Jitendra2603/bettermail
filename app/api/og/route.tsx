@@ -50,7 +50,7 @@ export async function GET() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <span style={{ color: "white", fontSize: "48px", fontWeight: 500 }}>
-                alana goyal
+                messages
               </span>
               <span style={{ color: "#8E8E93", fontSize: "32px", display: "flex", alignItems: "center", gap: "8px" }}>
                 messages

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Message, ReactionType, Reaction } from "../types";
 import { Conversation } from "../types";
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect, Fragment } from "react";
 import {
   Popover,
   PopoverContent,
@@ -17,10 +17,17 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import { Textarea } from "@/components/ui/textarea";
 
 // Add Document interface at the top
 interface Document {
@@ -63,135 +70,447 @@ const typingAnimation = `
 }
 `;
 
-const MessageContent = ({ message, conversation }: { message: Message, conversation?: Conversation }) => {
+// Add EditModal component
+function EditModal({ 
+  isOpen, 
+  onClose, 
+  content, 
+  onSave 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  content: string;
+  onSave: (content: string) => void;
+}) {
+  const [editedContent, setEditedContent] = useState(content);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      await onSave(editedContent);
+      onClose();
+    } catch (error) {
+      console.error('Error saving edit:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[800px] h-[80vh]">
+        <DialogHeader>
+          <DialogTitle>Edit AI Response</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 h-full">
+          <div className="flex-1 min-h-0">
+            <Textarea
+              value={editedContent}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedContent(e.target.value)}
+              className="h-full resize-none font-mono"
+              placeholder="Edit the response..."
+            />
+          </div>
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-muted-foreground">
+              Supports Markdown formatting
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Icons.loader className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Update MessageContent component to use EditModal
+const MessageContent = ({ message, conversation, isEditing, onEdit, onSaveEdit, onRemoveAttachment }: { message: Message, conversation?: Conversation, isEditing: boolean, onEdit: () => void, onSaveEdit: (newContent: string) => void, onRemoveAttachment: (index: number) => void }) => {
   const [imageLoadErrors, setImageLoadErrors] = useState<{[key: string]: boolean}>({});
+
+  // Debug logging only in development mode
+  if (process.env.NODE_ENV === 'development') {
+    console.log('MessageContent rendering message:', {
+      id: message.id,
+      type: message.type,
+      content: message.content ? (message.content.substring(0, 50) + (message.content.length > 50 ? '...' : '')) : '[No content]',
+      htmlContent: message.htmlContent ? (message.htmlContent.substring(0, 50) + (message.htmlContent.length > 50 ? '...' : '')) : '[No HTML]',
+      sender: message.sender,
+      hasAttachments: !!message.attachments?.length
+    });
+  }
+
+  const handleSaveEdit = async (newContent: string) => {
+    try {
+      // TODO: Update message content through parent component
+      onSaveEdit(newContent);
+    } catch (error) {
+      console.error('Error saving edit:', error);
+    }
+  };
 
   // Handle AI suggestions
   if (message.type === 'suggestion') {
     return (
-      <div className="flex flex-col gap-2">
-        <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />
-        
-        {/* Show relevant documents if available */}
-        {message.suggestion?.relevantDocs && message.suggestion.relevantDocs.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-            <div className="text-xs text-muted-foreground mb-1">
-              Relevant documents:
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {message.suggestion.relevantDocs.map((doc, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-xs"
-                >
-                  <Icons.document className="w-3 h-3" />
-                  <span className="truncate max-w-[150px]">{doc.title}</span>
-                  <span className="text-muted-foreground">
-                    {Math.round(doc.similarity * 100)}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Show status badge */}
-        <div className="flex items-center gap-2 mt-1">
-          <div
-            className={cn(
-              "text-xs px-2 py-0.5 rounded-full",
-              message.suggestion?.status === "approved"
-                ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
-                : message.suggestion?.status === "rejected"
-                ? "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
-                : "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300"
+      <>
+        <div className="flex flex-col gap-2">
+          {/* AI Badge */}
+          <div className="flex items-center gap-2 mb-2">
+            <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+              <Icons.sparkles className="w-3 h-3 mr-1" />
+              AI Suggestion
+            </Badge>
+            {message.suggestion?.status && (
+              <Badge 
+                variant="secondary" 
+                className={cn(
+                  "text-xs",
+                  message.suggestion.status === "approved" && "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300",
+                  message.suggestion.status === "rejected" && "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300",
+                  message.suggestion.status === "pending" && "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300"
+                )}
+              >
+                {message.suggestion.status.charAt(0).toUpperCase() + message.suggestion.status.slice(1)}
+              </Badge>
             )}
-          >
-            {message.suggestion?.status === "approved"
-              ? "Approved"
-              : message.suggestion?.status === "rejected"
-              ? "Rejected"
-              : "Pending"}
           </div>
-          {message.suggestion?.enhancedAt && (
-            <div className="text-xs text-muted-foreground">
-              Enhanced with context
+
+          {/* Message Content */}
+          <div className="text-[14px] prose dark:prose-invert max-w-none break-words overflow-wrap-anywhere word-break-break-word [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_tr]:border [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_blockquote]:border-l-4 [&_blockquote]:border-muted [&_blockquote]:pl-4 [&_blockquote]:italic [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex, rehypeRaw]}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+
+          {/* Attachments Grid */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {message.attachments.map((attachment, index) => {
+                if (attachment.mimeType?.startsWith('image/')) {
+                  if (imageLoadErrors[attachment.url]) {
+                    return (
+                      <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-background/10">
+                        <Icons.imageOff size={24} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {attachment.filename}
+                          </div>
+                          <div className="text-xs opacity-70">Failed to load image</div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            onRemoveAttachment(index);
+                          }}
+                          className="p-1 hover:bg-background/20 rounded-full"
+                        >
+                          <Icons.close className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={index} className="relative w-full max-w-[300px] aspect-square group">
+                      {attachment.url.startsWith('cid:') ? (
+                        // Fallback for cid: URLs which aren't supported in browsers
+                        <div className="absolute inset-0 rounded-lg overflow-hidden bg-background/10 flex flex-col items-center justify-center p-4">
+                          <Icons.imageOff size={36} className="text-muted-foreground mb-2" />
+                          <div className="text-sm text-center text-muted-foreground">
+                            <p>Email attachment</p>
+                            <p className="text-xs mt-1">{attachment.filename}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <a
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block absolute inset-0 rounded-lg overflow-hidden bg-background/10 hover:bg-background/20 transition-colors"
+                        >
+                          <Image
+                            src={attachment.url}
+                            alt={attachment.filename}
+                            fill
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                            className="object-cover"
+                            onError={() => {
+                              setImageLoadErrors(prev => ({
+                                ...prev,
+                                [attachment.url]: true
+                              }));
+                            }}
+                            unoptimized={attachment.url.startsWith('https://storage.googleapis.com/') || attachment.url.startsWith('/api/emails/')}
+                          />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => {
+                          onRemoveAttachment(index);
+                        }}
+                        className="absolute top-1 right-1 p-1 bg-background/50 hover:bg-background/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Icons.close className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (attachment.mimeType === "application/pdf") {
+                  return (
+                    <div key={index} className="group relative">
+                      <a
+                        href={attachment.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
+                      >
+                        <Icons.pdf size={24} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {attachment.filename}
+                          </div>
+                          <div className="text-xs opacity-70">PDF Document</div>
+                        </div>
+                      </a>
+                      <button
+                        onClick={() => {
+                          onRemoveAttachment(index);
+                        }}
+                        className="absolute top-1 right-1 p-1 bg-background/50 hover:bg-background/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Icons.close className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={index} className="group relative">
+                    <a
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
+                    >
+                      <Icons.file size={24} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">
+                          {attachment.filename}
+                        </div>
+                        <div className="text-xs opacity-70">
+                          {attachment.mimeType.split("/")[1].toUpperCase()}
+                        </div>
+                      </div>
+                    </a>
+                    <button
+                      onClick={() => {
+                        onRemoveAttachment(index);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-background/50 hover:bg-background/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Icons.close className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
+
+          {/* Show relevant documents if available */}
+          {message.suggestion?.relevantDocs && message.suggestion.relevantDocs.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-muted-foreground mb-1">
+                Referenced documents:
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {message.suggestion.relevantDocs.map((doc, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-xs"
+                  >
+                    <Icons.file className="w-3 h-3" />
+                    <span className="truncate max-w-[150px]">{doc.title}</span>
+                    <span className="text-muted-foreground">
+                      {Math.round(doc.similarity * 100)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Edit Button */}
+          <div className="flex items-center gap-2 mt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={onEdit}
+            >
+              <Icons.edit className="h-3 w-3 mr-1" />
+              Edit Response
+            </Button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  // Handle attachments
-  if (message.attachments && message.attachments.length > 0) {
-    return (
+  // Handle regular messages (including those with undefined type)
+  return (
+    <>
       <div className="flex flex-col gap-2">
-        {message.content && (
-          <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />
+        {/* Regular Message Content */}
+        {message.htmlContent ? (
+          <div 
+            className="text-[14px] prose dark:prose-invert max-w-none break-words overflow-wrap-anywhere word-break-break-word [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_tr]:border [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_blockquote]:border-l-4 [&_blockquote]:border-muted [&_blockquote]:pl-4 [&_blockquote]:italic [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4"
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(message.htmlContent) }}
+          />
+        ) : message.content ? (
+          message.content.startsWith('<') && (message.content.includes('</') || message.content.includes('/>')) ? (
+            // If content contains HTML tags, sanitize and render as HTML
+            <div 
+              className="text-[14px] prose dark:prose-invert max-w-none break-words overflow-wrap-anywhere word-break-break-word [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_tr]:border [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_blockquote]:border-l-4 [&_blockquote]:border-muted [&_blockquote]:pl-4 [&_blockquote]:italic [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(message.content) }}
+            />
+          ) : (
+            // Regular plain text content - preserve whitespace and line breaks
+            <div className="text-[14px] whitespace-pre-wrap break-words overflow-wrap-anywhere word-break-break-word">
+              {message.content}
+            </div>
+          )
+        ) : (
+          <div className="text-[14px] text-muted-foreground italic">[No content]</div>
         )}
-        <div className="grid grid-cols-2 gap-2">
-          {message.attachments.map((attachment, index) => {
-            // Show loading state if attachment is uploading
-            if (attachment.uploading) {
-              return (
-                <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-background/10">
-                  <Icons.loader className="animate-spin" size={24} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      {attachment.filename}
-                    </div>
-                    <div className="text-xs opacity-70">Uploading...</div>
-                  </div>
-                </div>
-              );
-            }
 
-            // Show image preview
-            if (attachment.mimeType?.startsWith('image/')) {
-              if (imageLoadErrors[attachment.url]) {
+        {/* Attachments Grid */}
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {message.attachments.map((attachment, index) => {
+              // Show loading state if attachment is uploading
+              if (attachment.uploading) {
                 return (
                   <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-background/10">
-                    <Icons.imageOff size={24} />
+                    <Icons.loader className="animate-spin" size={24} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">
                         {attachment.filename}
                       </div>
-                      <div className="text-xs opacity-70">Failed to load image</div>
+                      <div className="text-xs opacity-70">Uploading...</div>
                     </div>
                   </div>
                 );
               }
 
-              return (
-                <div key={index} className="relative w-full max-w-[300px] aspect-square">
+              // Show image preview
+              if (attachment.mimeType?.startsWith('image/')) {
+                if (imageLoadErrors[attachment.url]) {
+                  return (
+                    <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-background/10">
+                      <Icons.imageOff size={24} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">
+                          {attachment.filename}
+                        </div>
+                        <div className="text-xs opacity-70">Failed to load image</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          onRemoveAttachment(index);
+                        }}
+                        className="p-1 hover:bg-background/20 rounded-full"
+                      >
+                        <Icons.close className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={index} className="relative w-full max-w-[300px] aspect-square group">
+                    {attachment.url.startsWith('cid:') ? (
+                      // Fallback for cid: URLs which aren't supported in browsers
+                      <div className="absolute inset-0 rounded-lg overflow-hidden bg-background/10 flex flex-col items-center justify-center p-4">
+                        <Icons.imageOff size={36} className="text-muted-foreground mb-2" />
+                        <div className="text-sm text-center text-muted-foreground">
+                          <p>Email attachment</p>
+                          <p className="text-xs mt-1">{attachment.filename}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <a
+                        href={attachment.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block absolute inset-0 rounded-lg overflow-hidden bg-background/10 hover:bg-background/20 transition-colors"
+                      >
+                        <Image
+                          src={attachment.url}
+                          alt={attachment.filename}
+                          fill
+                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                          className="object-cover"
+                          onError={() => {
+                            setImageLoadErrors(prev => ({
+                              ...prev,
+                              [attachment.url]: true
+                            }));
+                          }}
+                          unoptimized={attachment.url.startsWith('https://storage.googleapis.com/') || attachment.url.startsWith('/api/emails/')}
+                        />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => {
+                        onRemoveAttachment(index);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-background/50 hover:bg-background/70 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Icons.close className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              }
+
+              // Show PDF preview
+              if (attachment.mimeType === "application/pdf") {
+                return (
                   <a
+                    key={index}
                     href={attachment.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block absolute inset-0 rounded-lg overflow-hidden bg-background/10 hover:bg-background/20 transition-colors"
+                    className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
                   >
-                    <Image
-                      src={attachment.url}
-                      alt={attachment.filename}
-                      fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      className="object-cover"
-                      onError={() => {
-                        setImageLoadErrors(prev => ({
-                          ...prev,
-                          [attachment.url]: true
-                        }));
-                      }}
-                      unoptimized={attachment.url.startsWith('https://storage.googleapis.com/') || attachment.url.startsWith('/api/emails/')}
-                    />
+                    <Icons.pdf size={24} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        {attachment.filename}
+                      </div>
+                      <div className="text-xs opacity-70">PDF Document</div>
+                    </div>
                   </a>
-                </div>
-              );
-            }
+                );
+              }
 
-            // Show PDF preview
-            if (attachment.mimeType === "application/pdf") {
+              // Show other file types
               return (
                 <a
                   key={index}
@@ -200,45 +519,23 @@ const MessageContent = ({ message, conversation }: { message: Message, conversat
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
                 >
-                  <Icons.pdf size={24} />
+                  <Icons.file size={24} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">
                       {attachment.filename}
                     </div>
-                    <div className="text-xs opacity-70">PDF Document</div>
+                    <div className="text-xs opacity-70">
+                      {attachment.mimeType.split("/")[1].toUpperCase()}
+                    </div>
                   </div>
                 </a>
               );
-            }
-
-            // Show other file types
-            return (
-              <a
-                key={index}
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 p-2 rounded-lg bg-background/10 hover:bg-background/20 transition-colors"
-              >
-                <Icons.file size={24} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">
-                    {attachment.filename}
-                  </div>
-                  <div className="text-xs opacity-70">
-                    {attachment.mimeType.split("/")[1].toUpperCase()}
-                  </div>
-                </div>
-              </a>
-            );
-          })}
-        </div>
+            })}
+          </div>
+        )}
       </div>
-    );
-  }
-
-  // Show regular message content
-  return <div className="text-[14px]" dangerouslySetInnerHTML={{ __html: message.content }} />;
+    </>
+  );
 };
 
 function formatFileSize(bytes: number) {
@@ -260,12 +557,22 @@ export function MessageBubble({
   justSent = false,
   isMobileView = false,
 }: MessageBubbleProps) {
+  // Debug logging only in development mode
+  if (process.env.NODE_ENV === 'development') {
+    console.log('MessageBubble rendering message:', {
+      id: message.id,
+      type: message.type,
+      content: message.content?.substring(0, 30) + (message.content?.length > 30 ? '...' : ''),
+      sender: message.sender,
+      hasAttachments: !!message.attachments?.length
+    });
+  }
+
   // Determine message sender type and display name
+  const isMe = message.sender === "me" || (message.type === "suggestion" && message.sender === "ai");
   const isSystemMessage = message.sender === "system";
-  const isAiSuggestion = message.type === "suggestion";
-  const isMe = message.sender === "me";
-  const showRecipientName = !isMe && !isSystemMessage && !isAiSuggestion;
-  const recipientName = showRecipientName ? message.sender : null;
+  const isAiSuggestion = message.type === "suggestion" && message.sender === "ai";
+  const recipientName = !isMe && !isSystemMessage ? message.sender : null;
 
   // Map of reaction types to their SVG paths for the menu
   const { theme, systemTheme } = useTheme();
@@ -282,7 +589,11 @@ export function MessageBubble({
 
   // State to control the Popover open state and animation
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState(message.content);
+  const [editedAttachments, setEditedAttachments] = useState(message.attachments || []);
   const openTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
 
   // Handler for menu state changes
   const handleOpenChange = useCallback(
@@ -305,6 +616,46 @@ export function MessageBubble({
     [onOpenChange]
   );
 
+  // Handler for saving edited content
+  const handleSaveEdit = async (newContent: string) => {
+    try {
+      // Update local state
+      setEditedContent(newContent);
+      setIsEditing(false);
+
+      // If this is a suggestion, we don't send it yet - wait for thumbs up
+      if (message.type === 'suggestion') {
+        message.content = newContent;
+        toast({
+          description: "Changes saved. React with thumbs up to send.",
+        });
+      }
+    } catch (error) {
+      console.error('Error saving edit:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save changes",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handler for removing attachments
+  const handleRemoveAttachment = (index: number) => {
+    if (message.attachments) {
+      const newAttachments = [...editedAttachments];
+      newAttachments.splice(index, 1);
+      setEditedAttachments(newAttachments);
+      
+      // Update the message's attachments
+      message.attachments = newAttachments;
+      
+      toast({
+        description: "Attachment removed",
+      });
+    }
+  };
+
   // Handler for when a reaction is clicked
   const handleReaction = useCallback(
     (type: ReactionType) => {
@@ -319,6 +670,72 @@ export function MessageBubble({
         // Play sound for any reaction action
         soundEffects.playReactionSound();
 
+        // If this is an AI suggestion and it's being approved
+        if (isAiSuggestion && type === 'like') {
+          // Convert markdown to HTML for email
+          const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <meta charset="utf-8">
+                <style>
+                  body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                  }
+                  pre {
+                    background-color: #f5f5f5;
+                    padding: 15px;
+                    border-radius: 5px;
+                    overflow-x: auto;
+                  }
+                  code {
+                    background-color: #f5f5f5;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                  }
+                  blockquote {
+                    border-left: 4px solid #ddd;
+                    margin: 0;
+                    padding-left: 15px;
+                    color: #666;
+                  }
+                  table {
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin: 15px 0;
+                  }
+                  th, td {
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: left;
+                  }
+                  th {
+                    background-color: #f5f5f5;
+                  }
+                  img {
+                    max-width: 100%;
+                    height: auto;
+                  }
+                  ul, ol {
+                    padding-left: 20px;
+                  }
+                </style>
+              </head>
+              <body>
+                ${message.content}
+              </body>
+            </html>
+          `;
+
+          // Send the message with the HTML content
+          message.htmlContent = htmlContent;
+        }
+
         // Send reaction to parent
         onReaction(message.id, reaction);
 
@@ -330,7 +747,7 @@ export function MessageBubble({
         }, 500);
       }
     },
-    [message.id, onReaction, onOpenChange, onReactionComplete]
+    [message, onReaction, onOpenChange, onReactionComplete, isAiSuggestion]
   );
 
   // Check if a specific reaction type is already active for the current user
@@ -469,416 +886,475 @@ export function MessageBubble({
 
       {/* Show recipient name for messages from others */}
       {recipientName && (
-        <div className="text-[10px] text-muted-foreground pl-4 pb-0.5 bg-background">
+        <div className="text-xs text-muted-foreground mb-1 ml-12">
           {recipientName}
         </div>
       )}
 
-      <div className="flex">
-        {/* Left spacer for blue messages */}
-        {isMe && <div className="flex-1 bg-background" />}
-        {/* Message bubble container */}
-        {isSystemMessage ? (
-          <div
-            className={cn(
-              "w-full flex justify-center py-2 px-3",
-              isSystemMessage && "bg-background"
-            )}
-          >
-            <div
-              className={cn(
-                "text-[12px] text-muted-foreground text-center whitespace-pre-line max-w-[80%]",
-                message.type === "silenced" &&
-                  "text-[#7978DF] flex items-center gap-1"
-              )}
-            >
-              {message.type === "silenced" && <Icons.silencedMoon />}
-              {message.content}
-            </div>
-          </div>
-        ) : isAiSuggestion ? (
-          <div
-            className={cn(
-              "group relative max-w-[75%] break-words flex-none",
-              isSystemMessage
-                ? "bg-muted/50 rounded-lg text-center"
-                : isTyping
-                ? "border-[17px] border-solid border-l-[22px] bg-blue-50 dark:bg-blue-900/20 text-gray-900 dark:text-gray-100"
-                : isMe
-                ? cn(
-                    "border-[17px] border-solid border-r-[22px] text-white",
-                    isMobileView
-                      ? "bg-[#0A7CFF]"
-                      : "bg-[linear-gradient(#47B5FF,#0A7CFF)] bg-fixed"
-                  )
-                : "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
-            )}
-            style={
-              !isSystemMessage
-                ? {
-                    borderImageSlice: isMe ? "31 43 31 31" : "31 31 31 43",
-                    borderImageSource: `url('${
-                      isMe
-                        ? rightBubbleSvg
-                        : isTyping
-                        ? typingIndicatorSvg
-                        : leftBubbleSvg
-                    }')`,
-                  }
-                : undefined
-            }
-          >
-            <div className={cn(!isTyping && "-my-2.5 -mx-1")}>
-              {/* Message content or typing indicator */}
-              {isTyping ? (
-                <div className="flex flex-col">
-                  {/* Add this to cover up the right border */}
-                  <div
-                    className={cn(
-                      "absolute border-r-[0.5px] border-background",
-                      !isMe || isTyping ? "inset-[-17px]" : "inset-[-22px]"
-                    )}
-                  />
-                  <div className="text-[14px] flex items-center">
-                    <div className="flex items-center justify-center gap-[4px] bg-gray-100 dark:bg-[#404040]">
-                      <style>{typingAnimation}</style>
-                      <div
-                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
-                        style={{ animation: "blink 1.4s infinite linear" }}
-                      />
-                      <div
-                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
-                        style={{
-                          animation: "blink 1.4s infinite linear 0.2s",
-                        }}
-                      />
-                      <div
-                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
-                        style={{
-                          animation: "blink 1.4s infinite linear 0.4s",
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <Popover
-                  open={isOpen}
-                  modal={true}
-                  onOpenChange={handleOpenChange}
-                >
-                  <PopoverTrigger asChild>
-                    <div className="flex flex-col cursor-pointer">
-                      {/* Add this to cover up the right border */}
-                      <div
-                        className={cn(
-                          "absolute border-r-[0.5px] border-background",
-                          !isMe ? "inset-[-17px]" : "inset-[-22px]"
-                        )}
-                      />
-                      <div className="text-[14px] flex items-center">
-                        <MessageContent message={message} conversation={conversation} />
-                      </div>
-                    </div>
-                  </PopoverTrigger>
-
-                  {/* Reaction menu */}
-                  <PopoverContent
-                    className="flex p-2 gap-2 w-fit rounded-full bg-gray-100 dark:bg-[#404040] z-50 reaction-menu"
-                    align={isMe ? "end" : "start"}
-                    alignOffset={-8}
-                    side="top"
-                    sideOffset={20}
-                  >
-                    {/* Reaction buttons */}
-                    {Object.entries(menuReactionIcons).map(([type, icon]) => (
-                      <button
-                        key={type}
-                        onClick={() => {
-                          handleReaction(type as ReactionType);
-                        }}
-                        className={cn(
-                          "inline-flex items-center justify-center rounded-full w-8 h-8 aspect-square p-0 cursor-pointer text-base transition-all duration-200 ease-out text-gray-500 hover:scale-125 flex-shrink-0",
-                          isReactionActive(type as ReactionType)
-                            ? "bg-[#0A7CFF] text-white scale-110"
-                            : ""
-                        )}
-                      >
-                        <Image
-                          src={
-                            isReactionActive(type as ReactionType)
-                              ? icon
-                                  .replace("-gray", "-white")
-                                  .replace("-dark", "-white")
-                              : icon
-                          }
-                          width={24}
-                          height={24}
-                          alt={`${type} reaction`}
-                          className="w-6 h-6"
-                        />
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              )}
-              {/* Display existing reactions */}
-              {message.reactions && message.reactions.length > 0 && (
-                <div
-                  className={cn(
-                    "absolute -top-8 flex",
-                    isMe ? "-left-8" : "-right-8",
-                    isMe ? "flex-row" : "flex-row-reverse"
-                  )}
-                >
-                  {[...message.reactions]
-                    .sort(
-                      (a, b) =>
-                        new Date(a.timestamp).getTime() -
-                        new Date(b.timestamp).getTime()
-                    )
-                    .map((reaction, index, array) => (
-                      <Popover key={`${reaction.type}-${reaction.timestamp}`}>
-                        <PopoverTrigger>
-                          <div
-                            key={`${reaction.type}-${reaction.timestamp}`}
-                            className={cn(
-                              "w-8 h-8 flex items-center justify-center text-sm relative cursor-pointer",
-                              index !== array.length - 1 &&
-                                (isMe ? "-mr-7" : "-ml-7"),
-                              `z-[${array.length - index}]`,
-                              // Add animation class when reaction is new
-                              // new Date().getTime() - new Date(reaction.timestamp).getTime() < 1000 && "reaction-pop"
-                            )}
-                            style={getReactionStyle(reaction, isMe, isMobileView)}
-                          >
-                            {reaction.sender === "me" && !isMobileView && (
-                              <Image
-                                src={getReactionIconSvg(
-                                  reaction.sender === "me",
-                                  isMe,
-                                  reaction.type,
-                                  isMobileView,
-                                  true
-                                )}
-                                width={32}
-                                height={32}
-                                alt={`${reaction.type} reaction`}
-                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
-                                unoptimized
-                              />
-                            )}
-                          </div>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-fit max-w-[200px] break-words px-3 py-1.5 bg-gray-100 dark:bg-[#404040] border-gray-100 dark:border-[#404040]">
-                          <p className="text-sm">
-                            {formatReactions(message.reactions || [])}
-                          </p>
-                        </PopoverContent>
-                      </Popover>
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "group relative max-w-[75%] break-words flex-none",
-              isSystemMessage
-                ? "bg-muted/50 rounded-lg text-center"
-                : isTyping
-                ? "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
-                : isMe
-                ? cn(
-                    "border-[17px] border-solid border-r-[22px] text-white",
-                    isMobileView
-                      ? "bg-[#0A7CFF]"
-                      : "bg-[linear-gradient(#47B5FF,#0A7CFF)] bg-fixed"
-                  )
-                : "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
-            )}
-            style={
-              !isSystemMessage
-                ? {
-                    borderImageSlice: isMe ? "31 43 31 31" : "31 31 31 43",
-                    borderImageSource: `url('${
-                      isMe
-                        ? rightBubbleSvg
-                        : isTyping
-                        ? typingIndicatorSvg
-                        : leftBubbleSvg
-                    }')`,
-                  }
-                : undefined
-            }
-          >
-            <div className={cn(!isTyping && "-my-2.5 -mx-1")}>
-              {/* Message content or typing indicator */}
-              {isTyping ? (
-                <div className="flex flex-col">
-                  {/* Add this to cover up the right border */}
-                  <div
-                    className={cn(
-                      "absolute border-r-[0.5px] border-background",
-                      !isMe || isTyping ? "inset-[-17px]" : "inset-[-22px]"
-                    )}
-                  />
-                  <div className="text-[14px] flex items-center">
-                    <div className="flex items-center justify-center gap-[4px] bg-gray-100 dark:bg-[#404040]">
-                      <style>{typingAnimation}</style>
-                      <div
-                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
-                        style={{ animation: "blink 1.4s infinite linear" }}
-                      />
-                      <div
-                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
-                        style={{
-                          animation: "blink 1.4s infinite linear 0.2s",
-                        }}
-                      />
-                      <div
-                        className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
-                        style={{
-                          animation: "blink 1.4s infinite linear 0.4s",
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <Popover
-                  open={isOpen}
-                  modal={true}
-                  onOpenChange={handleOpenChange}
-                >
-                  <PopoverTrigger asChild>
-                    <div className="flex flex-col cursor-pointer">
-                      {/* Add this to cover up the right border */}
-                      <div
-                        className={cn(
-                          "absolute border-r-[0.5px] border-background",
-                          !isMe ? "inset-[-17px]" : "inset-[-22px]"
-                        )}
-                      />
-                      <div className="text-[14px] flex items-center">
-                        <MessageContent message={message} conversation={conversation} />
-                      </div>
-                    </div>
-                  </PopoverTrigger>
-
-                  {/* Reaction menu */}
-                  <PopoverContent
-                    className="flex p-2 gap-2 w-fit rounded-full bg-gray-100 dark:bg-[#404040] z-50 reaction-menu"
-                    align={isMe ? "end" : "start"}
-                    alignOffset={-8}
-                    side="top"
-                    sideOffset={20}
-                  >
-                    {/* Reaction buttons */}
-                    {Object.entries(menuReactionIcons).map(([type, icon]) => (
-                      <button
-                        key={type}
-                        onClick={() => {
-                          handleReaction(type as ReactionType);
-                        }}
-                        className={cn(
-                          "inline-flex items-center justify-center rounded-full w-8 h-8 aspect-square p-0 cursor-pointer text-base transition-all duration-200 ease-out text-gray-500 hover:scale-125 flex-shrink-0",
-                          isReactionActive(type as ReactionType)
-                            ? "bg-[#0A7CFF] text-white scale-110"
-                            : ""
-                        )}
-                      >
-                        <Image
-                          src={
-                            isReactionActive(type as ReactionType)
-                              ? icon
-                                  .replace("-gray", "-white")
-                                  .replace("-dark", "-white")
-                              : icon
-                          }
-                          width={24}
-                          height={24}
-                          alt={`${type} reaction`}
-                          className="w-6 h-6"
-                        />
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              )}
-              {/* Display existing reactions */}
-              {message.reactions && message.reactions.length > 0 && (
-                <div
-                  className={cn(
-                    "absolute -top-8 flex",
-                    isMe ? "-left-8" : "-right-8",
-                    isMe ? "flex-row" : "flex-row-reverse"
-                  )}
-                >
-                  {[...message.reactions]
-                    .sort(
-                      (a, b) =>
-                        new Date(a.timestamp).getTime() -
-                        new Date(b.timestamp).getTime()
-                    )
-                    .map((reaction, index, array) => (
-                      <Popover key={`${reaction.type}-${reaction.timestamp}`}>
-                        <PopoverTrigger>
-                          <div
-                            key={`${reaction.type}-${reaction.timestamp}`}
-                            className={cn(
-                              "w-8 h-8 flex items-center justify-center text-sm relative cursor-pointer",
-                              index !== array.length - 1 &&
-                                (isMe ? "-mr-7" : "-ml-7"),
-                              `z-[${array.length - index}]`,
-                              // Add animation class when reaction is new
-                              // new Date().getTime() - new Date(reaction.timestamp).getTime() < 1000 && "reaction-pop"
-                            )}
-                            style={getReactionStyle(reaction, isMe, isMobileView)}
-                          >
-                            {reaction.sender === "me" && !isMobileView && (
-                              <Image
-                                src={getReactionIconSvg(
-                                  reaction.sender === "me",
-                                  isMe,
-                                  reaction.type,
-                                  isMobileView,
-                                  true
-                                )}
-                                width={32}
-                                height={32}
-                                alt={`${reaction.type} reaction`}
-                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
-                                unoptimized
-                              />
-                            )}
-                          </div>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-fit max-w-[200px] break-words px-3 py-1.5 bg-gray-100 dark:bg-[#404040] border-gray-100 dark:border-[#404040]">
-                          <p className="text-sm">
-                            {formatReactions(message.reactions || [])}
-                          </p>
-                        </PopoverContent>
-                      </Popover>
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
+      {/* Message container */}
+      <div
+        className={cn(
+          "flex w-full",
+          isMe ? "justify-end" : "justify-start",
+          isSystemMessage && "justify-center"
         )}
-        {/* Right spacer for gray messages */}
-        {!isSystemMessage && !isMe && <div className="flex-1 bg-background" />}
-      </div>
+      >
+        {/* Message bubble */}
+        <div
+          className={cn(
+            "relative max-w-[85%] rounded-lg p-3 shadow-sm",
+            isMe
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-foreground",
+            isSystemMessage && "bg-transparent text-muted-foreground shadow-none text-sm py-1",
+            isAiSuggestion && "bg-blue-500 text-white border border-blue-600",
+            message.type === "silenced" && "bg-muted/50 text-muted-foreground"
+          )}
+        >
+          {/* Show recipient name for messages from others */}
+          {recipientName && (
+            <div className="text-[10px] text-muted-foreground pl-4 pb-0.5 bg-background">
+              {recipientName}
+            </div>
+          )}
 
-      {/* Show "Delivered" for last message from current user */}
-      {isMe && isLastUserMessage && !isTyping && (
-        <div className="text-[10px] text-gray-500 pt-1 pr-1 bg-background text-right">
-          <span className={cn(justSent && "animate-scale-in")}>Delivered</span>
+          <div className="flex">
+            {/* Left spacer for blue messages */}
+            {isMe && <div className="flex-1 bg-background" />}
+            {/* Message bubble container */}
+            {isSystemMessage ? (
+              <div
+                className={cn(
+                  "w-full flex justify-center py-2 px-3",
+                  isSystemMessage && "bg-background"
+                )}
+              >
+                <div
+                  className={cn(
+                    "text-[12px] text-muted-foreground text-center whitespace-pre-line max-w-[80%]",
+                    message.type === "silenced" &&
+                      "text-[#7978DF] flex items-center gap-1"
+                  )}
+                >
+                  {message.type === "silenced" && <Icons.silencedMoon />}
+                  {message.content}
+                </div>
+              </div>
+            ) : isAiSuggestion ? (
+              <div
+                className={cn(
+                  "group relative max-w-[75%] break-words flex-none",
+                  isSystemMessage
+                    ? "bg-muted/50 rounded-lg text-center"
+                    : isTyping
+                    ? "border-[17px] border-solid border-l-[22px] bg-blue-50 dark:bg-blue-900/20 text-gray-900 dark:text-gray-100"
+                    : isMe
+                    ? cn(
+                        "border-[17px] border-solid border-r-[22px] text-white",
+                        isMobileView
+                          ? "bg-[#0A7CFF]"
+                          : "bg-[linear-gradient(#47B5FF,#0A7CFF)] bg-fixed"
+                      )
+                    : isAiSuggestion
+                    ? "border-[17px] border-solid border-l-[22px] bg-green-50 dark:bg-green-900/20 text-gray-900 dark:text-gray-100"
+                    : "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
+                )}
+                style={
+                  !isSystemMessage
+                    ? {
+                        borderImageSlice: isMe ? "31 43 31 31" : "31 31 31 43",
+                        borderImageSource: `url('${
+                          isMe
+                            ? rightBubbleSvg
+                            : isTyping
+                            ? typingIndicatorSvg
+                            : leftBubbleSvg
+                        }')`,
+                      }
+                    : undefined
+                }
+              >
+                <div className={cn(!isTyping && "-my-2.5 -mx-1")}>
+                  {/* Message content or typing indicator */}
+                  {isTyping ? (
+                    <div className="flex flex-col">
+                      {/* Add this to cover up the right border */}
+                      <div
+                        className={cn(
+                          "absolute border-r-[0.5px] border-background",
+                          !isMe || isTyping ? "inset-[-17px]" : "inset-[-22px]"
+                        )}
+                      />
+                      <div className="text-[14px] flex items-center">
+                        <div className="flex items-center justify-center gap-[4px] bg-gray-100 dark:bg-[#404040]">
+                          <style>{typingAnimation}</style>
+                          <div
+                            className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                            style={{ animation: "blink 1.4s infinite linear" }}
+                          />
+                          <div
+                            className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                            style={{
+                              animation: "blink 1.4s infinite linear 0.2s",
+                            }}
+                          />
+                          <div
+                            className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                            style={{
+                              animation: "blink 1.4s infinite linear 0.4s",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <Popover
+                      open={isOpen}
+                      modal={true}
+                      onOpenChange={handleOpenChange}
+                    >
+                      <PopoverTrigger asChild>
+                        <div className="flex flex-col cursor-pointer">
+                          {/* Add this to cover up the right border */}
+                          <div
+                            className={cn(
+                              "absolute border-r-[0.5px] border-background",
+                              !isMe ? "inset-[-17px]" : "inset-[-22px]"
+                            )}
+                          />
+                          <div className="text-[14px] flex items-center">
+                            <MessageContent 
+                              message={{
+                                ...message,
+                                content: editedContent,
+                                attachments: editedAttachments
+                              }}
+                              conversation={conversation}
+                              isEditing={isEditing}
+                              onEdit={() => setIsEditing(true)}
+                              onSaveEdit={handleSaveEdit}
+                              onRemoveAttachment={handleRemoveAttachment}
+                            />
+                          </div>
+                        </div>
+                      </PopoverTrigger>
+
+                      {/* Reaction menu */}
+                      <PopoverContent
+                        className="flex p-2 gap-2 w-fit rounded-full bg-gray-100 dark:bg-[#404040] z-50 reaction-menu"
+                        align={isMe ? "end" : "start"}
+                        alignOffset={-8}
+                        side="top"
+                        sideOffset={20}
+                      >
+                        {/* Reaction buttons */}
+                        {Object.entries(menuReactionIcons).map(([type, icon]) => (
+                          <button
+                            key={type}
+                            onClick={() => {
+                              handleReaction(type as ReactionType);
+                            }}
+                            className={cn(
+                              "inline-flex items-center justify-center rounded-full w-8 h-8 aspect-square p-0 cursor-pointer text-base transition-all duration-200 ease-out text-gray-500 hover:scale-125 flex-shrink-0",
+                              isReactionActive(type as ReactionType)
+                                ? "bg-[#0A7CFF] text-white scale-110"
+                                : ""
+                            )}
+                          >
+                            <Image
+                              src={
+                                isReactionActive(type as ReactionType)
+                                  ? icon
+                                      .replace("-gray", "-white")
+                                      .replace("-dark", "-white")
+                                  : icon
+                              }
+                              width={24}
+                              height={24}
+                              alt={`${type} reaction`}
+                              className="w-6 h-6"
+                            />
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  {/* Display existing reactions */}
+                  {message.reactions && message.reactions.length > 0 && (
+                    <div
+                      className={cn(
+                        "absolute -top-8 flex",
+                        isMe ? "-left-8" : "-right-8",
+                        isMe ? "flex-row" : "flex-row-reverse"
+                      )}
+                    >
+                      {[...message.reactions]
+                        .sort(
+                          (a, b) =>
+                            new Date(a.timestamp).getTime() -
+                            new Date(b.timestamp).getTime()
+                        )
+                        .map((reaction, index, array) => (
+                          <Popover key={`${reaction.type}-${reaction.timestamp}`}>
+                            <PopoverTrigger>
+                              <div
+                                key={`${reaction.type}-${reaction.timestamp}`}
+                                className={cn(
+                                  "w-8 h-8 flex items-center justify-center text-sm relative cursor-pointer",
+                                  index !== array.length - 1 &&
+                                    (isMe ? "-mr-7" : "-ml-7"),
+                                  `z-[${array.length - index}]`
+                                )}
+                                style={getReactionStyle(reaction, isMe, isMobileView)}
+                              >
+                                {reaction.sender === "me" && !isMobileView && (
+                                  <Image
+                                    src={getReactionIconSvg(
+                                      reaction.sender === "me",
+                                      isMe,
+                                      reaction.type,
+                                      isMobileView,
+                                      true
+                                    )}
+                                    width={32}
+                                    height={32}
+                                    alt={`${reaction.type} reaction`}
+                                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
+                                    unoptimized
+                                  />
+                                )}
+                              </div>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-fit max-w-[200px] break-words px-3 py-1.5 bg-gray-100 dark:bg-[#404040] border-gray-100 dark:border-[#404040]">
+                              <p className="text-sm">
+                                {formatReactions(message.reactions || [])}
+                              </p>
+                            </PopoverContent>
+                          </Popover>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  "group relative max-w-[75%] break-words flex-none",
+                  isSystemMessage
+                    ? "bg-muted/50 rounded-lg text-center"
+                    : isTyping
+                    ? "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
+                    : isMe
+                    ? cn(
+                        "border-[17px] border-solid border-r-[22px] text-white",
+                        isMobileView
+                          ? "bg-[#0A7CFF]"
+                          : "bg-[linear-gradient(#47B5FF,#0A7CFF)] bg-fixed"
+                      )
+                    : isAiSuggestion
+                    ? "border-[17px] border-solid border-l-[22px] bg-green-50 dark:bg-green-900/20 text-gray-900 dark:text-gray-100"
+                    : "border-[17px] border-solid border-l-[22px] bg-gray-100 dark:bg-[#404040] text-gray-900 dark:text-gray-100"
+                )}
+                style={
+                  !isSystemMessage
+                    ? {
+                        borderImageSlice: isMe ? "31 43 31 31" : "31 31 31 43",
+                        borderImageSource: `url('${
+                          isMe
+                            ? rightBubbleSvg
+                            : isTyping
+                            ? typingIndicatorSvg
+                            : leftBubbleSvg
+                        }')`,
+                      }
+                    : undefined
+                }
+              >
+                <div className={cn(!isTyping && "-my-2.5 -mx-1")}>
+                  {/* Message content or typing indicator */}
+                  {isTyping ? (
+                    <div className="flex flex-col">
+                      {/* Add this to cover up the right border */}
+                      <div
+                        className={cn(
+                          "absolute border-r-[0.5px] border-background",
+                          !isMe || isTyping ? "inset-[-17px]" : "inset-[-22px]"
+                        )}
+                      />
+                      <div className="text-[14px] flex items-center">
+                        <div className="flex items-center justify-center gap-[4px] bg-gray-100 dark:bg-[#404040]">
+                          <style>{typingAnimation}</style>
+                          <div
+                            className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                            style={{ animation: "blink 1.4s infinite linear" }}
+                          />
+                          <div
+                            className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                            style={{
+                              animation: "blink 1.4s infinite linear 0.2s",
+                            }}
+                          />
+                          <div
+                            className="w-1.5 h-1.5 rounded-full bg-gray-500 dark:bg-gray-300"
+                            style={{
+                              animation: "blink 1.4s infinite linear 0.4s",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <Popover
+                      open={isOpen}
+                      modal={true}
+                      onOpenChange={handleOpenChange}
+                    >
+                      <PopoverTrigger asChild>
+                        <div className="flex flex-col cursor-pointer">
+                          {/* Add this to cover up the right border */}
+                          <div
+                            className={cn(
+                              "absolute border-r-[0.5px] border-background",
+                              !isMe ? "inset-[-17px]" : "inset-[-22px]"
+                            )}
+                          />
+                          <div className="text-[14px] flex items-center">
+                            <MessageContent 
+                              message={{
+                                ...message,
+                                content: editedContent,
+                                attachments: editedAttachments
+                              }}
+                              conversation={conversation}
+                              isEditing={isEditing}
+                              onEdit={() => setIsEditing(true)}
+                              onSaveEdit={handleSaveEdit}
+                              onRemoveAttachment={handleRemoveAttachment}
+                            />
+                          </div>
+                        </div>
+                      </PopoverTrigger>
+
+                      {/* Reaction menu */}
+                      <PopoverContent
+                        className="flex p-2 gap-2 w-fit rounded-full bg-gray-100 dark:bg-[#404040] z-50 reaction-menu"
+                        align={isMe ? "end" : "start"}
+                        alignOffset={-8}
+                        side="top"
+                        sideOffset={20}
+                      >
+                        {/* Reaction buttons */}
+                        {Object.entries(menuReactionIcons).map(([type, icon]) => (
+                          <button
+                            key={type}
+                            onClick={() => {
+                              handleReaction(type as ReactionType);
+                            }}
+                            className={cn(
+                              "inline-flex items-center justify-center rounded-full w-8 h-8 aspect-square p-0 cursor-pointer text-base transition-all duration-200 ease-out text-gray-500 hover:scale-125 flex-shrink-0",
+                              isReactionActive(type as ReactionType)
+                                ? "bg-[#0A7CFF] text-white scale-110"
+                                : ""
+                            )}
+                          >
+                            <Image
+                              src={
+                                isReactionActive(type as ReactionType)
+                                  ? icon
+                                      .replace("-gray", "-white")
+                                      .replace("-dark", "-white")
+                                  : icon
+                              }
+                              width={24}
+                              height={24}
+                              alt={`${type} reaction`}
+                              className="w-6 h-6"
+                            />
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  {/* Display existing reactions */}
+                  {message.reactions && message.reactions.length > 0 && (
+                    <div
+                      className={cn(
+                        "absolute -top-8 flex",
+                        isMe ? "-left-8" : "-right-8",
+                        isMe ? "flex-row" : "flex-row-reverse"
+                      )}
+                    >
+                      {[...message.reactions]
+                        .sort(
+                          (a, b) =>
+                            new Date(a.timestamp).getTime() -
+                            new Date(b.timestamp).getTime()
+                        )
+                        .map((reaction, index, array) => (
+                          <Popover key={`${reaction.type}-${reaction.timestamp}`}>
+                            <PopoverTrigger>
+                              <div
+                                key={`${reaction.type}-${reaction.timestamp}`}
+                                className={cn(
+                                  "w-8 h-8 flex items-center justify-center text-sm relative cursor-pointer",
+                                  index !== array.length - 1 &&
+                                    (isMe ? "-mr-7" : "-ml-7"),
+                                  `z-[${array.length - index}]`
+                                )}
+                                style={getReactionStyle(reaction, isMe, isMobileView)}
+                              >
+                                {reaction.sender === "me" && !isMobileView && (
+                                  <Image
+                                    src={getReactionIconSvg(
+                                      reaction.sender === "me",
+                                      isMe,
+                                      reaction.type,
+                                      isMobileView,
+                                      true
+                                    )}
+                                    width={32}
+                                    height={32}
+                                    alt={`${reaction.type} reaction`}
+                                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-8 h-8"
+                                    unoptimized
+                                  />
+                                )}
+                              </div>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-fit max-w-[200px] break-words px-3 py-1.5 bg-gray-100 dark:bg-[#404040] border-gray-100 dark:border-[#404040]">
+                              <p className="text-sm">
+                                {formatReactions(message.reactions || [])}
+                              </p>
+                            </PopoverContent>
+                          </Popover>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Right spacer for gray messages */}
+            {!isSystemMessage && !isMe && <div className="flex-1 bg-background" />}
+          </div>
+
+          {/* Show "Delivered" for last message from current user */}
+          {isMe && isLastUserMessage && !isTyping && (
+            <div className="text-[10px] text-gray-500 pt-1 pr-1 bg-background text-right">
+              <span className={cn(justSent && "animate-scale-in")}>Delivered</span>
+            </div>
+          )}
+          {/* Spacer after messages */}
+          <div className="h-1 bg-background" />
+
+          {/* Edit Modal */}
+          <EditModal
+            isOpen={isEditing}
+            onClose={() => setIsEditing(false)}
+            content={message.content}
+            onSave={(newContent) => handleSaveEdit(newContent)}
+          />
         </div>
-      )}
-      {/* Spacer after messages */}
-      <div className="h-1 bg-background" />
+      </div>
     </div>
   );
 }
@@ -976,9 +1452,9 @@ function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: bo
           <div className="flex-1 min-w-0">
             {doc.mimeType?.startsWith('image/') ? (
               <div className="relative h-full">
-                {!imageError ? (
+                {!imageError && doc.url && !doc.url.startsWith('cid:') ? (
                   <Image
-                    src={doc.url || ''}
+                    src={doc.url}
                     alt={doc.filename}
                     fill
                     sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -987,9 +1463,12 @@ function DocumentViewModal({ doc, isOpen, onClose }: { doc: Document; isOpen: bo
                     unoptimized={doc.url?.startsWith('https://storage.googleapis.com/')}
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                    <Icons.file className="h-12 w-12 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground mt-2">Failed to load image</p>
+                  <div className="h-full flex flex-col items-center justify-center">
+                    <Icons.imageOff size={48} className="text-muted-foreground mb-4" />
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {doc.url?.startsWith('cid:') ? 'Email attachment cannot be displayed' : 'Failed to load image'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{doc.filename}</p>
                   </div>
                 )}
               </div>
@@ -1059,6 +1538,63 @@ function DocumentDetails({ doc }: { doc: Document }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Add this component for the reaction menu
+function ReactionMenu({
+  isOpen,
+  onOpenChange,
+  position,
+  onReaction,
+  isMe,
+  isAiSuggestion,
+  activeReactions,
+}: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  position: { x: number; y: number };
+  onReaction: (type: ReactionType) => void;
+  isMe: boolean;
+  isAiSuggestion: boolean;
+  activeReactions: ReactionType[];
+}) {
+  const reactions: { type: ReactionType; icon: JSX.Element }[] = [
+    { type: 'like', icon: <Icons.thumbsUp className="h-4 w-4" /> },
+    { type: 'heart', icon: <Icons.heart className="h-4 w-4" /> },
+    { type: 'laugh', icon: <Icons.laugh className="h-4 w-4" /> },
+    { type: 'emphasize', icon: <Icons.exclamation className="h-4 w-4" /> },
+    { type: 'question', icon: <Icons.question className="h-4 w-4" /> },
+  ];
+
+  // For AI suggestions, only show thumbs up
+  const availableReactions = isAiSuggestion ? reactions.slice(0, 1) : reactions;
+
+  return (
+    <div
+      className={cn(
+        "absolute z-50 flex items-center gap-1 p-1 rounded-full bg-white dark:bg-[#404040] shadow-lg transition-all duration-200",
+        isOpen ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"
+      )}
+      style={{
+        left: position.x,
+        top: position.y - 50,
+        transform: 'translate(-50%, -50%)',
+      }}
+    >
+      {availableReactions.map(({ type, icon }) => (
+        <button
+          key={type}
+          onClick={() => onReaction(type)}
+          className={cn(
+            "p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#505050] transition-colors",
+            activeReactions.includes(type) && "text-blue-500"
+          )}
+        >
+          {icon}
+        </button>
+      ))}
     </div>
   );
 }

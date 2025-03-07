@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Recipient } from "@/types";
 import { Fragment } from "react";
+import { ChevronRight } from "lucide-react";
 
 interface ContactDrawerProps {
   recipients: Array<Omit<Recipient, "id">>;
@@ -75,7 +76,7 @@ export function ContactDrawer({
       <DrawerTrigger asChild>
         <div className="flex items-center cursor-pointer">
           {recipientCount > 1 ? `${recipientCount} people` : recipients[0]?.name}
-          <Icons.chevronRight className="h-4 w-4 ml-1" />
+          <ChevronRight className="h-4 w-4 ml-1 text-muted-foreground" />
         </div>
       </DrawerTrigger>
       <DrawerContent className="h-[90vh] focus:outline-none bg-muted">
@@ -193,7 +194,7 @@ export function ContactDrawer({
                       </div>
                     </div>
                     {recipient.bio && (
-                      <Icons.chevronRight
+                      <ChevronRight
                         className={`w-5 h-5 transition-transform text-muted-foreground flex-shrink-0 ${
                           expandedUser === recipient.name ? "rotate-90" : ""
                         }`}

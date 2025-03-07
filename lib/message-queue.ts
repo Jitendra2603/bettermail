@@ -252,19 +252,25 @@ export class MessageQueue {
         // For email threads, send to the email reply endpoint
         const lastMessage = task.conversation.messages[task.conversation.messages.length - 1];
         
-        // Find the original sender to reply to (the last message not from 'me')
+        // Find the original sender to reply to (the last message not from 'me', 'system', or 'ai')
         const originalMessage = task.conversation.messages
           .slice()
           .reverse()
-          .find(msg => msg.sender !== 'me');
+          .find(msg => msg.sender !== 'me' && msg.sender !== 'system' && msg.sender !== 'ai');
 
-        if (!originalMessage) {
-          console.error('[MessageQueue] Could not find original message to reply to');
-          throw new Error("Could not find original message to reply to");
+        // Get the recipient from the original message sender or use the first conversation recipient as fallback
+        let recipient: string;
+        
+        if (originalMessage) {
+          recipient = originalMessage.sender;
+        } else if (task.conversation.recipients && task.conversation.recipients.length > 0) {
+          // Use the first recipient as fallback
+          recipient = task.conversation.recipients[0].name;
+          console.log('[MessageQueue] Using fallback recipient:', recipient);
+        } else {
+          console.error('[MessageQueue] Could not find any valid recipient for email reply');
+          throw new Error("Could not find any valid recipient for email reply");
         }
-
-        // Get the recipient from the original message sender
-        const recipient = originalMessage.sender;
         
         console.log('[MessageQueue] Preparing email reply:', {
           threadId: task.conversation.threadId,
@@ -272,6 +278,12 @@ export class MessageQueue {
           content: lastMessage.content?.substring(0, 50) + '...',
           hasAttachments: !!lastMessage.attachments?.length
         });
+
+        // Validate recipient
+        if (!recipient || recipient === 'system' || recipient === 'ai' || recipient === 'me') {
+          console.error('[MessageQueue] Invalid recipient for email reply:', recipient);
+          throw new Error("Invalid recipient for email reply");
+        }
 
         // Create sending message to show in UI
         const sendingMessage: Message = {
@@ -291,7 +303,7 @@ export class MessageQueue {
             body: JSON.stringify({
               content: lastMessage.content,
               to: [recipient],
-              attachments: lastMessage.attachments
+              attachments: lastMessage.attachments || []
             }),
             signal: task.abortController.signal,
           });

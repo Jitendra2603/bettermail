@@ -56,33 +56,182 @@ export function useEmailSync() {
     // Sort emails by timestamp
     emails.sort((a, b) => a.receivedAt.toMillis() - b.receivedAt.toMillis());
     
-    const messages: Message[] = emails.map(email => ({
-      id: createUniqueMessageId(email),
-      content: email.body || '',
-      sender: email.from === session?.user?.email ? 'me' : email.from,
-      timestamp: email.receivedAt.toDate().toISOString(),
-      reactions: [],
-      isEmailThread: true,
-      htmlContent: email.htmlBody,
-      attachments: email.attachments?.map(attachment => ({
-        url: attachment.url,
-        filename: attachment.filename,
-        mimeType: attachment.mimeType,
-        attachmentId: attachment.attachmentId
-      }))
-    }));
+    const messages: Message[] = emails.map(email => {
+      // Extract sender name from email.from if it contains a name
+      let senderName = email.from;
+      if (email.from === session?.user?.email) {
+        senderName = 'me';
+      } else if (email.from.includes('<')) {
+        // Extract name from format "Name <email@example.com>"
+        const nameMatch = email.from.match(/(.*?)\s*<.*>/);
+        if (nameMatch && nameMatch[1]) {
+          senderName = nameMatch[1].trim();
+        }
+      }
+      
+      // Add debug logging only in development mode
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Creating message from email:', {
+          id: email.messageId,
+          content: email.content?.substring(0, 50) || email.body?.substring(0, 50) || '[No content]',
+          htmlContent: email.htmlContent?.substring(0, 50) || email.htmlBody?.substring(0, 50) || '[No HTML content]',
+          from: email.from,
+          senderName,
+          hasAttachments: !!email.attachments?.length
+        });
+      }
+      
+      return {
+        id: createUniqueMessageId(email),
+        content: email.content || email.body || '',
+        sender: senderName,
+        timestamp: email.receivedAt.toDate().toISOString(),
+        reactions: [],
+        isEmailThread: true,
+        htmlContent: email.htmlContent || email.htmlBody || '',
+        type: 'message',
+        attachments: email.attachments?.map((attachment: any) => ({
+          url: attachment.url,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          attachmentId: attachment.attachmentId
+        }))
+      };
+    });
 
     const latestEmail = emails[emails.length - 1];
+    
+    // Extract recipient names from email addresses
+    const recipients = emails[0].to.map((to: string) => {
+      let name = to;
+      let id = to;
+      
+      // Extract name from format "Name <email@example.com>"
+      if (to.includes('<')) {
+        const nameMatch = to.match(/(.*?)\s*<(.*)>/);
+        if (nameMatch && nameMatch[1] && nameMatch[2]) {
+          name = nameMatch[1].trim();
+          id = nameMatch[2].trim();
+        }
+      }
+      
+      return { name, id };
+    });
+    
+    // Add sender as first recipient for proper avatar display
+    if (emails[0].from !== session?.user?.email) {
+      let senderName = emails[0].from;
+      let senderId = emails[0].from;
+      
+      // Extract name from format "Name <email@example.com>"
+      if (emails[0].from.includes('<')) {
+        const nameMatch = emails[0].from.match(/(.*?)\s*<(.*)>/);
+        if (nameMatch && nameMatch[1] && nameMatch[2]) {
+          senderName = nameMatch[1].trim();
+          senderId = nameMatch[2].trim();
+        }
+      }
+      
+      // Create a simple avatar from the first letter of the sender's name
+      const firstLetter = senderName.charAt(0).toUpperCase();
+      
+      // Use iMessage-like gradient colors
+      const gradientStart = '#9BA1AA';
+      const gradientEnd = '#7D828A';
+      
+      // Add sender as first recipient with a data URI for the avatar
+      // Encode the SVG properly for use in a data URI
+      const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+        <defs>
+          <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:${gradientStart};stop-opacity:1" />
+            <stop offset="100%" style="stop-color:${gradientEnd};stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <rect width="40" height="40" fill="url(#grad)"/>
+        <text x="50%" y="50%" font-family="Arial" font-size="20" fill="white" text-anchor="middle" dominant-baseline="middle">${firstLetter}</text>
+      </svg>`;
+      const encodedSvg = encodeURIComponent(svgContent);
+      const avatarUrl = `data:image/svg+xml;charset=utf-8,${encodedSvg}`;
+      
+      // Add sender as first recipient
+      recipients.unshift({
+        name: senderName,
+        id: senderId,
+        avatar: avatarUrl
+      });
+    }
+    
+    // Determine conversation name from the sender of the first email (if not from the user)
+    let conversationName = '';
+    const firstEmail = emails[0];
+    if (firstEmail.from !== session?.user?.email) {
+      // Use sender name if available
+      if (firstEmail.from.includes('<')) {
+        const nameMatch = firstEmail.from.match(/(.*?)\s*<(.*)>/);
+        if (nameMatch && nameMatch[1]) {
+          conversationName = nameMatch[1].trim();
+        } else {
+          conversationName = firstEmail.from;
+        }
+      } else {
+        conversationName = firstEmail.from;
+      }
+    } else if (emails.length > 1) {
+      // If first message is from user, use the first reply sender
+      const firstReply = emails.find(email => email.from !== session?.user?.email);
+      if (firstReply) {
+        if (firstReply.from.includes('<')) {
+          const nameMatch = firstReply.from.match(/(.*?)\s*<(.*)>/);
+          if (nameMatch && nameMatch[1]) {
+            conversationName = nameMatch[1].trim();
+          } else {
+            conversationName = firstReply.from;
+          }
+        } else {
+          conversationName = firstReply.from;
+        }
+      }
+    }
+    
+    // If no name could be determined, use the subject
+    if (!conversationName && firstEmail.subject) {
+      conversationName = firstEmail.subject;
+    }
+    
+    // Get current timestamp as fallback
+    const now = new Date().toISOString();
+    
+    // Get timestamp from the latest email safely
+    let timestamp = now;
+    if (latestEmail && latestEmail.receivedAt) {
+      // Check if receivedAt is a Firestore Timestamp
+      if (typeof latestEmail.receivedAt.toDate === 'function') {
+        timestamp = latestEmail.receivedAt.toDate().toISOString();
+      } 
+      // Check if it's already a Date object
+      else if (latestEmail.receivedAt instanceof Date) {
+        timestamp = latestEmail.receivedAt.toISOString();
+      }
+      // Check if it's a string timestamp
+      else if (typeof latestEmail.receivedAt === 'string') {
+        timestamp = latestEmail.receivedAt;
+      }
+    }
+    
     return {
       id: threadId,
       threadId: threadId,
-      recipients: emails[0].to.map((to: string) => ({ name: to, id: to })),
+      name: conversationName,
+      recipients: recipients,
       messages,
-      lastMessageTime: latestEmail.receivedAt.toDate().toISOString(),
+      lastMessageTime: timestamp,
       unreadCount: emails.filter(email => !email.isRead && email.from !== session?.user?.email).length,
       pinned: false,
       hideAlerts: false,
       isEmailThread: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     };
   }, [session?.user?.email, createUniqueMessageId]);
 
@@ -131,7 +280,12 @@ export function useEmailSync() {
       });
 
       // Sort conversations by last message time
-      conversations.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+      conversations.sort((a, b) => {
+        // Safely parse dates with fallback to current time
+        const dateA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : Date.now();
+        const dateB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : Date.now();
+        return dateB - dateA;
+      });
       setEmailConversations(conversations);
 
       // Show notification for new emails

@@ -28,6 +28,15 @@ body {
   font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
+/* Custom utility classes for word breaking */
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+}
+
+.word-break-break-word {
+  word-break: break-word;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

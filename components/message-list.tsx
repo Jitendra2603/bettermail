@@ -119,7 +119,9 @@ export function MessageList({
     <div ref={messageListRef} className="flex-1 flex flex-col-reverse relative">
       {/* Messages layer */}
       <div className="flex-1 relative">
-        {messages.map((message, index) => (
+        {messages
+          .filter(message => message.type !== 'silenced')
+          .map((message, index) => (
           <div
             key={message.id}
             data-message-id={message.id}

@@ -1,11 +1,10 @@
-import { Conversation, Reaction } from "../types";
-import { useEffect, useRef, useState } from "react";
+import { Conversation, Message, Reaction, Recipient } from "../types";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { ChatHeader } from "./chat-header";
 import { MessageInput } from "./message-input";
 import { MessageList } from "./message-list";
 import { ScrollArea } from "./ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Recipient } from "@/types";
 import { Icons } from "./icons";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -38,6 +37,59 @@ interface ChatAreaProps {
   unreadCount?: number;
 }
 
+// Add this function to generate AI suggestions
+async function generateAISuggestion(message: Message, conversation: Conversation) {
+  try {
+    console.log('[AI Suggestion] Generating suggestion for message:', {
+      messageId: message.id,
+      threadId: conversation.threadId,
+      content: message.content.substring(0, 100) + '...'
+    });
+
+    // Call the suggest API
+    const response = await fetch(`/api/emails/${conversation.threadId}/suggest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId: message.id,
+        threadId: conversation.threadId,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[AI Suggestion] API error:', {
+        status: response.status,
+        statusText: response.statusText
+      });
+      throw new Error('Failed to generate suggestion');
+    }
+
+    const data = await response.json();
+    console.log('[AI Suggestion] API response:', {
+      success: data.success,
+      hasSuggestion: !!data.suggestion,
+      suggestionPreview: data.suggestion?.content.substring(0, 100) + '...'
+    });
+    
+    if (!data.suggestion) {
+      throw new Error('No suggestion returned from API');
+    }
+
+    // Return the suggestion data directly - it will be formatted into a Message in the effect
+    return {
+      id: data.suggestion.id,
+      content: data.suggestion.content,
+      relevantDocs: data.suggestion.relevantDocs || [],
+      attachments: data.suggestion.attachments || [],
+    };
+  } catch (error) {
+    console.error('[AI Suggestion] Error generating suggestion:', error);
+    return null;
+  }
+}
+
 export function ChatArea({
   isNewChat,
   activeConversation,
@@ -64,6 +116,7 @@ export function ChatArea({
   const { theme } = useTheme();
   const router = useRouter();
   const isSmallScreen = useMediaQuery("(max-width: 640px)");
+  const [pendingSuggestions, setPendingSuggestions] = useState<{[key: string]: boolean}>({});
 
   useEffect(() => {
     if (isNewChat) {
@@ -88,6 +141,174 @@ export function ChatArea({
     }
   };
 
+  // Watch for new messages from others and generate suggestions
+  useEffect(() => {
+    if (!activeConversation) {
+      console.log('[AI Suggestion] No active conversation, skipping');
+      return;
+    }
+
+    const messages = activeConversation.messages;
+    if (!messages.length) {
+      console.log('[AI Suggestion] No messages in conversation, skipping');
+      return;
+    }
+
+    // Get the last message
+    const lastMessage = messages[messages.length - 1];
+    console.log('[AI Suggestion] Processing last message:', {
+      id: lastMessage.id,
+      sender: lastMessage.sender,
+      type: lastMessage.type,
+      isPending: pendingSuggestions[lastMessage.id],
+      preview: lastMessage.content.substring(0, 100) + '...',
+      isEmailThread: activeConversation.isEmailThread,
+      threadId: activeConversation.threadId
+    });
+
+    // Only generate suggestions for email threads
+    if (!activeConversation.isEmailThread || !activeConversation.threadId) {
+      console.log('[AI Suggestion] Not an email thread or no threadId, skipping');
+      return;
+    }
+
+    // Check if the message is from someone else (not me)
+    const isFromOthers = lastMessage.sender !== 'me' && lastMessage.sender !== 'ai' && lastMessage.sender !== 'system';
+
+    // If it's from others and we haven't generated a suggestion yet
+    if (isFromOthers && !pendingSuggestions[lastMessage.id]) {
+      console.log('[AI Suggestion] Generating suggestion for message:', lastMessage.id);
+      setPendingSuggestions(prev => ({ ...prev, [lastMessage.id]: true }));
+
+      // Generate suggestion
+      generateAISuggestion(lastMessage, {
+        ...activeConversation,
+        threadId: activeConversation.threadId // Use the conversation's threadId
+      }).then(suggestion => {
+        if (suggestion) {
+          console.log('[AI Suggestion] Creating suggestion message from:', suggestion);
+          
+          // Create a proper suggestion message
+          const suggestionMessage: Message = {
+            id: suggestion.id,
+            content: suggestion.content,
+            sender: 'ai',
+            type: 'suggestion',
+            timestamp: new Date().toISOString(),
+            suggestion: {
+              id: suggestion.id,
+              status: 'pending',
+              relevantDocs: suggestion.relevantDocs,
+            },
+            attachments: suggestion.attachments,
+            htmlContent: suggestion.content, // Add HTML content to ensure it renders properly
+          };
+
+          console.log('[AI Suggestion] Created suggestion message:', suggestionMessage);
+
+          // Add suggestion to conversation
+          const updatedConversation = {
+            ...activeConversation,
+            messages: [...activeConversation.messages, suggestionMessage],
+          };
+
+          console.log('[AI Suggestion] Updating conversation with suggestion:', {
+            conversationId: updatedConversation.id,
+            messageCount: updatedConversation.messages.length,
+            lastMessage: updatedConversation.messages[updatedConversation.messages.length - 1]
+          });
+
+          // Update the conversation with the new suggestion
+          onUpdateConversationRecipients?.(
+            updatedConversation.id,
+            updatedConversation.recipients
+          );
+        } else {
+          console.log('[AI Suggestion] No suggestion generated');
+          // Clear the pending state if no suggestion was generated
+          setPendingSuggestions(prev => {
+            const next = { ...prev };
+            delete next[lastMessage.id];
+            return next;
+          });
+        }
+      }).catch(error => {
+        console.error('[AI Suggestion] Error generating suggestion:', error);
+        // Clear the pending state on error
+        setPendingSuggestions(prev => {
+          const next = { ...prev };
+          delete next[lastMessage.id];
+          return next;
+        });
+      });
+    } else {
+      console.log('[AI Suggestion] Skipping suggestion generation:', {
+        isFromOthers,
+        alreadyPending: pendingSuggestions[lastMessage.id]
+      });
+    }
+  }, [activeConversation?.messages, onUpdateConversationRecipients]);
+
+  // Handle reactions (including suggestion approvals)
+  const handleReaction = useCallback(async (messageId: string, reaction: Reaction) => {
+    if (!activeConversation) return;
+
+    // Find the message
+    const message = activeConversation.messages.find(m => m.id === messageId);
+    if (!message) {
+      console.log('[Reaction] Message not found:', messageId);
+      return;
+    }
+
+    console.log('[Reaction] Processing reaction:', {
+      messageId,
+      messageType: message.type,
+      reactionType: reaction.type
+    });
+
+    // If this is a suggestion and it's a thumbs up
+    if (message.type === 'suggestion' && reaction.type === 'like') {
+      try {
+        console.log('[Reaction] Sending suggestion as message:', {
+          content: message.content.substring(0, 100) + '...',
+          hasAttachments: !!message.attachments?.length
+        });
+
+        // Send the suggestion as a reply
+        await onSendMessage(
+          message.htmlContent || message.content, // Use HTML content if available
+          activeConversation.id,
+          message.attachments
+        );
+
+        console.log('[Reaction] Suggestion sent, removing suggestion message');
+
+        // Remove the suggestion message
+        const updatedMessages = activeConversation.messages.filter(
+          m => m.id !== messageId
+        );
+
+        // Update conversation
+        const updatedConversation = {
+          ...activeConversation,
+          messages: updatedMessages,
+        };
+
+        onUpdateConversationRecipients?.(
+          updatedConversation.id,
+          updatedConversation.recipients
+        );
+      } catch (error) {
+        console.error('[Reaction] Error sending suggestion:', error);
+      }
+    } else {
+      // Handle normal reactions
+      console.log('[Reaction] Processing normal reaction');
+      onReaction?.(messageId, reaction);
+    }
+  }, [activeConversation, onSendMessage, onUpdateConversationRecipients, onReaction]);
+
+  // Handle message sending
   const handleSend = async () => {
     if (messageDraft.trim() || attachments.length > 0) {
       try {
@@ -141,17 +362,8 @@ export function ChatArea({
             });
           }
         }
-        
-        // Check if this is an email thread
-        const isEmailThread = activeConversation?.isEmailThread || false;
-        const threadId = activeConversation?.threadId || null;
-        
-        // If this is an email thread, ensure we have a recipient
-        if (isEmailThread && !activeConversation?.recipients?.[0]) {
-          throw new Error("No recipient found for email thread");
-        }
-        
-        // Now send the message with the permanent URLs
+
+        // Send the message
         await onSendMessage(messageDraft, conversationId || undefined, uploadedAttachments);
         setAttachments([]);
         setMessageInputKey((prev) => prev + 1);
@@ -181,7 +393,6 @@ export function ChatArea({
           timestamp: new Date().toISOString(),
         };
         
-        // Add error message to conversation
         if (activeConversation) {
           const updatedConversation = {
             ...activeConversation,
@@ -249,9 +460,7 @@ export function ChatArea({
                     ? typingStatus
                     : null
                 }
-                onReaction={(messageId, reaction) => {
-                  onReaction?.(messageId, reaction);
-                }}
+                onReaction={handleReaction}
                 conversationId={conversationId}
                 messageInputRef={messageInputRef}
                 isMobileView={isMobileView}

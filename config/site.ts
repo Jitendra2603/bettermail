@@ -1,4 +1,4 @@
 export const siteConfig = {
-    title: "alana goyal | messages",
+    title: "| messages",
     url: process.env.NEXT_PUBLIC_VERCEL_URL,
   };

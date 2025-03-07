@@ -162,9 +162,10 @@ export function Sidebar({
       }
 
       // For letter shortcuts, check if we're in an input or editor
-      if (["j", "k", "p", "d", "t", "s", "h"].includes(e.key)) {
+      if (["j", "k", "p", "d", "t", "s", "h", "n"].includes(e.key)) {
         if (
           document.activeElement?.tagName === "INPUT" ||
+          document.activeElement?.tagName === "TEXTAREA" ||
           e.metaKey ||
           document
             .querySelector(".ProseMirror")
@@ -436,7 +437,7 @@ export function Sidebar({
                                             </div>
                                           </div>
                                         </div>
-                                      ) : conversation.unreadCount > 0 ? (
+                                      ) : conversation.unreadCount && conversation.unreadCount > 0 ? (
                                         (() => {
                                           const lastMessage =
                                             conversation.messages
@@ -542,7 +543,7 @@ export function Sidebar({
                                     </div>
                                     <div className="w-full text-center">
                                       <div className="relative max-w-full inline-flex justify-center">
-                                        {conversation.unreadCount > 0 && (
+                                        {conversation.unreadCount && conversation.unreadCount > 0 && (
                                           <div className="absolute right-full mr-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-[#0A7CFF] rounded-full" />
                                         )}
                                         <span className="text-xs truncate max-w-full">

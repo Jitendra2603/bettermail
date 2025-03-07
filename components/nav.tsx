@@ -21,6 +21,7 @@ export function Nav({ onNewChat, isMobileView, isScrolled }: NavProps) {
       // or if the TipTap editor is focused
       if (
         document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA" ||
         e.metaKey ||
         document.querySelector(".ProseMirror")?.contains(document.activeElement)
       ) {

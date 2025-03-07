@@ -29,10 +29,10 @@ export class GmailService {
       // Check if this is a sent message
       const isSentMessage = message.labelIds?.includes('SENT');
       
-      // For sent messages, use 'You' as sender
+      // For sent messages, use 'me' as sender
       // For received messages, extract the email from the From header
       const effectiveSender = isSentMessage 
-        ? 'You'
+        ? 'me'
         : from.includes('<') 
           ? from.match(/<(.+?)>/)?.[1] || from 
           : from;
@@ -118,12 +118,16 @@ export class GmailService {
         from: effectiveSender,
         to,
         subject,
-        body: textBody,
-        htmlBody,
+        content: textBody || htmlBody,
+        htmlContent: htmlBody,
         attachments,
         receivedAt: new Date(parseInt(message.internalDate)),
         labels: message.labelIds || [],
         isRead: !message.labelIds?.includes('UNREAD'),
+        type: 'message', // Set explicit message type
+        sender: effectiveSender, // Use consistent sender format
+        timestamp: new Date(parseInt(message.internalDate)).toISOString(),
+        id: message.id, // Add id field for consistency
       };
     } catch (error) {
       console.error('Error decoding message:', message.id, error);

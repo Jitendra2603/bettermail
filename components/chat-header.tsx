@@ -31,10 +31,10 @@ interface ChatHeaderProps {
   onBack?: () => void;
   isMobileView?: boolean;
   activeConversation?: Conversation;
-  onUpdateRecipients?: (recipientNames: string[]) => void;
-  onCreateConversation?: (recipientNames: string[]) => void;
-  onUpdateConversationName?: (name: string) => void;
-  onHideAlertsChange?: (hide: boolean) => void;
+  onUpdateRecipients?: (recipientNames: Recipient[]) => void;
+  onCreateConversation?: (recipientNames: Recipient[]) => void;
+  onUpdateConversationName?: (conversationId: string, name: string) => void;
+  onHideAlertsChange?: (conversationId: string, hideAlerts: boolean) => void;
   unreadCount?: number;
   showCompactNewChat?: boolean;
   setShowCompactNewChat?: (show: boolean) => void;
@@ -374,14 +374,14 @@ export function ChatHeader({
 
             if (isEditMode) {
               setIsEditMode(false);
-              onUpdateRecipients?.(currentRecipients);
+              onUpdateRecipients?.(currentRecipients.map((name) => ({ name })));
             } else if (isNewChat) {
               if (isMobileView) {
                 setShowResults(false);
-                onCreateConversation?.(currentRecipients);
+                onCreateConversation?.(currentRecipients.map((name) => ({ name })));
               } else {
                 setShowCompactNewChat?.(true);
-                onCreateConversation?.(currentRecipients);
+                onCreateConversation?.(currentRecipients.map((name) => ({ name })));
               }
             }
 
@@ -465,13 +465,13 @@ export function ChatHeader({
 
       if (isEditMode && recipientNames.length > 0 && !searchValue) {
         setIsEditMode(false);
-        onUpdateRecipients?.(recipientNames);
+        onUpdateRecipients?.(recipientNames.map((name) => ({ name })));
       } else if (
         isNewChat &&
         (!isMobileView || recipientNames.length > 0) &&
         !searchValue
       ) {
-        onCreateConversation?.(recipientNames);
+        onCreateConversation?.(recipientNames.map((name) => ({ name })));
       }
       if (!searchValue) {
         setSearchValue("");
@@ -674,7 +674,7 @@ export function ChatHeader({
           // Only update recipients if we're not in edit mode
           if (!isEditMode && onUpdateRecipients) {
             onUpdateRecipients(
-              newRecipients.split(",").filter((r) => r.trim())
+              newRecipients.split(",").filter((r) => r.trim()).map((name) => ({ name }))
             );
           }
         }}

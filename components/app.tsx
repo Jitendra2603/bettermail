@@ -80,7 +80,7 @@ export default function App() {
     (conversationId: string | null) => {
       if (conversationId === null) {
         setActiveConversation(null);
-        router.push("/messages");
+        setIsNewConversation(false);
         return;
       }
 
@@ -90,12 +90,10 @@ export default function App() {
 
       if (!selectedConversation) {
         console.error(`Conversation with ID ${conversationId} not found`);
-        router.push("/messages");
 
         if (conversations.length > 0) {
           const fallbackConversation = conversations[0];
           setActiveConversation(fallbackConversation.id);
-          router.push(`/messages?id=${fallbackConversation.id}`);
         } else {
           setActiveConversation(null);
         }
@@ -104,9 +102,8 @@ export default function App() {
 
       setActiveConversation(conversationId);
       setIsNewConversation(false);
-      router.push(`/messages?id=${conversationId}`);
     },
-    [conversations, router]
+    [conversations]
   );
 
   // Effects
@@ -197,8 +194,8 @@ export default function App() {
 
     // Sort all conversations by last message time
     allConversations.sort((a, b) => {
-      const timeA = new Date(b.lastMessageTime).getTime();
-      const timeB = new Date(a.lastMessageTime).getTime();
+      const timeA = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : new Date(b.updatedAt).getTime();
+      const timeB = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : new Date(a.updatedAt).getTime();
       return timeA - timeB;
     });
 
@@ -451,13 +448,15 @@ export default function App() {
     // Update state
     setConversations((prev) => {
       const updatedConversations = [newConversation, ...prev];
-      setActiveConversation(newConversation.id);
-      setIsNewConversation(false);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedConversations));
       return updatedConversations;
     });
 
-    window.history.pushState({}, "", `?id=${newConversation.id}`);
+    // Just update the state, let the useEffect handle navigation
+    setActiveConversation(newConversation.id);
+    setIsNewConversation(false);
+    
+    return newConversation.id;
   };
 
   // Method to handle message sending
@@ -466,9 +465,13 @@ export default function App() {
     conversationId?: string,
     attachments: { url: string; filename: string; mimeType: string }[] = []
   ) => {
+    // Process the message content - ensure it's treated as plain text
+    // No HTML processing needed with the new textarea approach
+    const messageContent = message;
+
     const newMessage: Message = {
       id: generateClientUUID(),
-      content: message,
+      content: messageContent,
       sender: "me",
       timestamp: new Date().toISOString(),
       attachments,
@@ -517,8 +520,9 @@ export default function App() {
         .filter((r) => r.length > 0);
 
       if (recipientList.length > 0) {
+        const newConversationId = generateClientUUID();
         const newConversation: Conversation = {
-          id: generateClientUUID(),
+          id: newConversationId,
           recipients: recipientList.map((name) => ({
             id: name.toLowerCase(),
             name,
@@ -536,7 +540,8 @@ export default function App() {
         };
 
         setConversations(prev => [newConversation, ...prev]);
-        setActiveConversation(newConversation.id);
+        // Don't navigate here - just update the state
+        setActiveConversation(newConversationId);
         setIsNewConversation(false);
         setRecipientInput("");
         
@@ -546,7 +551,7 @@ export default function App() {
         } catch (error) {
           console.error("Failed to send message:", error);
           // Remove the conversation on failure
-          setConversations(prev => prev.filter(c => c.id !== newConversation.id));
+          setConversations(prev => prev.filter(c => c.id !== newConversationId));
           throw error;
         }
       }
@@ -702,6 +707,14 @@ export default function App() {
   const totalUnreadCount = conversations.reduce((total, conv) => {
     return total + (conv.unreadCount || 0);
   }, 0);
+
+  // Add this useEffect after the other useEffects
+  useEffect(() => {
+    // Only navigate if we have an active conversation and we're not in new conversation mode
+    if (activeConversation && !isNewConversation) {
+      router.push(`/messages?id=${activeConversation}`);
+    }
+  }, [activeConversation, isNewConversation, router]);
 
   // Don't render until layout is initialized
   if (!isLayoutInitialized) {
