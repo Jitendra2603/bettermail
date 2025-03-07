@@ -61,6 +61,18 @@ function DocumentDetails({ doc }: { doc: ParsedDocument }) {
                 <span className="text-sm">{doc.metadata.wordCount.toLocaleString()}</span>
               </div>
             )}
+            {doc.metadata?.oneLineSummary && (
+              <div className="mt-3 border-t pt-2">
+                <span className="text-sm text-muted-foreground block mb-1">One-line Summary</span>
+                <p className="text-sm">{doc.metadata.oneLineSummary}</p>
+              </div>
+            )}
+            {doc.metadata?.conciseSummary && (
+              <div className="mt-3 border-t pt-2">
+                <span className="text-sm text-muted-foreground block mb-1">Concise Summary</span>
+                <p className="text-sm">{doc.metadata.conciseSummary}</p>
+              </div>
+            )}
           </div>
         </AccordionContent>
       </AccordionItem>
@@ -68,7 +80,7 @@ function DocumentDetails({ doc }: { doc: ParsedDocument }) {
       {doc.metadata?.summary && (
         <AccordionItem value="summary">
           <AccordionTrigger className="text-sm font-medium hover:no-underline hover:text-blue-500">
-            Summary
+            Full Summary
           </AccordionTrigger>
           <AccordionContent>
             <div className="text-sm prose dark:prose-invert max-w-none">
@@ -215,7 +227,85 @@ function DocumentViewModal({ doc, isOpen, onClose }: { doc: ParsedDocument; isOp
 
           {/* Details */}
           <div className="w-full md:w-80 flex-shrink-0 overflow-y-auto">
-            <DocumentDetails doc={doc} />
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Title</span>
+                <span className="text-sm">{doc.metadata?.title || doc.filename}</span>
+              </div>
+              {doc.metadata?.author && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Author</span>
+                  <span className="text-sm">{doc.metadata.author}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Created</span>
+                <span className="text-sm">{formatDate(doc.createdAt)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Pages</span>
+                <span className="text-sm">{doc.metadata?.pageCount || 1}</span>
+              </div>
+              {doc.metadata?.wordCount && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Words</span>
+                  <span className="text-sm">{doc.metadata.wordCount.toLocaleString()}</span>
+                </div>
+              )}
+              {doc.metadata?.oneLineSummary && (
+                <div className="mt-3 border-t pt-2">
+                  <span className="text-sm font-medium block mb-1">One-line Summary</span>
+                  <p className="text-sm">{doc.metadata.oneLineSummary}</p>
+                </div>
+              )}
+              {doc.metadata?.conciseSummary && (
+                <div className="mt-3 border-t pt-2">
+                  <span className="text-sm font-medium block mb-1">Concise Summary</span>
+                  <p className="text-sm">{doc.metadata.conciseSummary}</p>
+                </div>
+              )}
+              
+              {/* Expandable sections */}
+              <Accordion type="single" collapsible className="w-full mt-3">
+                {doc.metadata?.summary && (
+                  <AccordionItem value="summary">
+                    <AccordionTrigger className="text-sm font-medium hover:no-underline hover:text-blue-500 py-2">
+                      Full Summary
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="text-sm prose dark:prose-invert max-w-none">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex, rehypeRaw]}
+                        >
+                          {doc.metadata.summary}
+                        </ReactMarkdown>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+                
+                {doc.text && (
+                  <AccordionItem value="content">
+                    <AccordionTrigger className="text-sm font-medium hover:no-underline hover:text-blue-500 py-2">
+                      Full Content
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="max-h-96 overflow-y-auto">
+                        <div className="text-sm prose dark:prose-invert max-w-none [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_tr]:border [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_blockquote]:border-l-4 [&_blockquote]:border-muted [&_blockquote]:pl-4 [&_blockquote]:italic [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-4">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm, remarkMath]}
+                            rehypePlugins={[rehypeKatex, rehypeRaw]}
+                          >
+                            {doc.text}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+              </Accordion>
+            </div>
           </div>
         </div>
       </DialogContent>

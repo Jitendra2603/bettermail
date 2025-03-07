@@ -203,6 +203,29 @@ export class LlamaParseService {
 
           // Try to generate summary, but don't fail if it doesn't work
           let summary = '';
+          let oneLineSummary = '';
+          let conciseSummary = '';
+          
+          // Define metadata interface
+          interface DocumentMetadata {
+            title: string;
+            createdAt: string;
+            pageCount: number;
+            wordCount: number;
+            author?: string;
+            summary?: string;
+            oneLineSummary?: string;
+            conciseSummary?: string;
+          }
+
+          // Create base metadata without optional fields
+          const metadata: DocumentMetadata = {
+            title: parsedData.job_metadata?.title || filename,
+            createdAt: new Date().toISOString(),
+            pageCount: 1,
+            wordCount: (parsedData.markdown?.split(/\s+/).length || 0)
+          };
+          
           try {
             console.log('[LlamaParse] Generating summary');
             const summaryResponse = await fetch('https://api.cloud.llamaindex.ai/api/v1/summarize', {
@@ -225,11 +248,106 @@ export class LlamaParseService {
                 summary: summaryData.summary,
                 length: summaryData.summary?.length
               });
+              
+              // Generate one-line summary from the full summary
+              try {
+                // Extract first sentence (up to 100 chars)
+                const firstSentence = summary.split(/[.!?]/).filter(s => s.trim().length > 0)[0] || '';
+                oneLineSummary = firstSentence.trim();
+                
+                // Truncate if too long and add ellipsis
+                if (oneLineSummary.length > 100) {
+                  oneLineSummary = oneLineSummary.substring(0, 97) + '...';
+                }
+                
+                console.log('[LlamaParse] One-line summary generated from summary:', oneLineSummary);
+              } catch (error) {
+                console.error('[LlamaParse] Error generating one-line summary from summary:', error);
+              }
+              
+              // Generate concise 2-3 line summary using OpenAI if available
+              if (this.openAIService) {
+                try {
+                  console.log('[LlamaParse] Generating concise 2-3 line summary using OpenAI');
+                  const title = metadata.title || '';
+                  conciseSummary = await this.openAIService.generateConciseSummary(
+                    parsedData.markdown || '',
+                    title
+                  );
+                  console.log('[LlamaParse] Concise summary generated:', conciseSummary);
+                } catch (error) {
+                  console.error('[LlamaParse] Error generating concise summary with OpenAI:', error);
+                }
+              }
             } else {
               console.log('[LlamaParse] Summary generation skipped:', await summaryResponse.text());
+              
+              // Generate one-line summary directly from document content
+              try {
+                // Use the first few words of the document as a fallback
+                const docContent = parsedData.markdown || '';
+                const words = docContent.split(/\s+/).filter((w: string) => w.trim().length > 0);
+                const firstFewWords = words.slice(0, 10).join(' ');
+                
+                oneLineSummary = firstFewWords;
+                if (words.length > 10) {
+                  oneLineSummary += '...';
+                }
+                
+                console.log('[LlamaParse] One-line summary generated from content:', oneLineSummary);
+                
+                // Try to generate concise summary with OpenAI even if LlamaIndex summary failed
+                if (this.openAIService) {
+                  try {
+                    console.log('[LlamaParse] Generating concise 2-3 line summary using OpenAI (fallback)');
+                    const title = metadata.title || '';
+                    conciseSummary = await this.openAIService.generateConciseSummary(
+                      docContent,
+                      title
+                    );
+                    console.log('[LlamaParse] Concise summary generated (fallback):', conciseSummary);
+                  } catch (error) {
+                    console.error('[LlamaParse] Error generating concise summary with OpenAI (fallback):', error);
+                  }
+                }
+              } catch (error) {
+                console.error('[LlamaParse] Error generating one-line summary from content:', error);
+              }
             }
           } catch (error) {
             console.error('[LlamaParse] Error generating summary:', error);
+            
+            // Generate one-line summary directly from document content as fallback
+            try {
+              // Use the first few words of the document as a fallback
+              const docContent = parsedData.markdown || '';
+              const words = docContent.split(/\s+/).filter((w: string) => w.trim().length > 0);
+              const firstFewWords = words.slice(0, 10).join(' ');
+              
+              oneLineSummary = firstFewWords;
+              if (words.length > 10) {
+                oneLineSummary += '...';
+              }
+              
+              console.log('[LlamaParse] Fallback one-line summary generated:', oneLineSummary);
+              
+              // Try to generate concise summary with OpenAI as a last resort
+              if (this.openAIService) {
+                try {
+                  console.log('[LlamaParse] Generating concise 2-3 line summary using OpenAI (last resort)');
+                  const title = metadata.title || '';
+                  conciseSummary = await this.openAIService.generateConciseSummary(
+                    docContent,
+                    title
+                  );
+                  console.log('[LlamaParse] Concise summary generated (last resort):', conciseSummary);
+                } catch (error) {
+                  console.error('[LlamaParse] Error generating concise summary with OpenAI (last resort):', error);
+                }
+              }
+            } catch (fallbackError) {
+              console.error('[LlamaParse] Error generating fallback one-line summary:', fallbackError);
+            }
           }
 
           // Generate embedding if OpenAI service is available
@@ -246,23 +364,6 @@ export class LlamaParseService {
             }
           }
 
-          // Create base metadata without optional fields
-          interface DocumentMetadata {
-            title: string;
-            createdAt: string;
-            pageCount: number;
-            wordCount: number;
-            author?: string;
-            summary?: string;
-          }
-
-          const metadata: DocumentMetadata = {
-            title: parsedData.job_metadata?.title || filename,
-            createdAt: new Date().toISOString(),
-            pageCount: 1,
-            wordCount: (parsedData.markdown?.split(/\s+/).length || 0)
-          };
-
           // Add optional metadata fields only if they exist
           if (parsedData.job_metadata?.author) {
             metadata.author = parsedData.job_metadata.author;
@@ -272,6 +373,12 @@ export class LlamaParseService {
           }
           if (summary) {
             metadata.summary = summary;
+          }
+          if (oneLineSummary) {
+            metadata.oneLineSummary = oneLineSummary;
+          }
+          if (conciseSummary) {
+            metadata.conciseSummary = conciseSummary;
           }
 
           // Create base document without optional fields

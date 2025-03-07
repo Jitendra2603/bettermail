@@ -1,113 +1,115 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/app/api/auth/[...nextauth]/auth-options";
-import { OpenAIService } from "@/lib/openai";
-import { LlamaParseService } from "@/lib/llama-parse";
-import { adminDb } from "@/lib/firebase-admin";
-import { Message } from "@/types";
+
+// Mock function to generate a suggestion
+function generateMockSuggestion(messageContent: string) {
+  console.log('[SuggestAPI] Generating mock suggestion for message:', messageContent);
+
+  // Mock relevant documents
+  const mockDocs = [
+    { title: "Sample Document 1.pdf", similarity: 0.92 },
+    { title: "Meeting Notes.pdf", similarity: 0.85 },
+  ];
+
+  // Mock attachments
+  const mockAttachments = [
+    {
+      filename: "sample.pdf",
+      mimeType: "application/pdf",
+      url: "/api/context/document/123/view",
+    },
+  ];
+
+  // Mock suggestion content
+  const suggestionContent = `Here's a draft reply:
+
+I've reviewed the documents you shared and here are my thoughts:
+
+1. Regarding your question about the project timeline:
+   - The current phase is on track
+   - We expect to complete by end of Q2
+
+2. Key points from the attached documents:
+   - Budget allocation is within limits
+   - Resource planning looks good
+
+Let me know if you need any clarification.
+
+Best regards`;
+
+  const suggestionId = crypto.randomUUID();
+  const suggestion = {
+    id: suggestionId,
+    content: suggestionContent,
+    sender: 'ai',
+    type: 'suggestion',
+    timestamp: new Date().toISOString(),
+    suggestion: {
+      id: suggestionId,
+      status: 'pending',
+      relevantDocs: mockDocs,
+    },
+    attachments: mockAttachments,
+  };
+
+  console.log('[SuggestAPI] Generated suggestion:', {
+    id: suggestion.id,
+    contentPreview: suggestion.content.substring(0, 100) + '...',
+    docsCount: suggestion.suggestion.relevantDocs.length,
+    attachmentsCount: suggestion.attachments.length
+  });
+
+  return suggestion;
+}
 
 export async function POST(
   request: Request,
   { params }: { params: { threadId: string } }
 ) {
   try {
-    console.log('[SuggestAPI] Processing request for thread:', params.threadId);
+    // Get threadId from params (no need to await params itself)
+    const { threadId } = params;
+    console.log('[SuggestAPI] Received request for thread:', threadId);
     
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.id) {
       console.error('[SuggestAPI] Unauthorized request - no user session');
-      return NextResponse.json({ error: "Unauthorized - Please sign in" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get the email thread from Firestore
-    const emailsRef = adminDb
-      .collection('users')
-      .doc(session.user.id)
-      .collection('emails');
-
-    const threadSnapshot = await emailsRef
-      .where('threadId', '==', params.threadId)
-      .orderBy('receivedAt', 'asc')
-      .get();
-
-    if (threadSnapshot.empty) {
-      console.error('[SuggestAPI] Thread not found:', params.threadId);
-      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-    }
-
-    // Convert thread to messages array
-    const messages: Message[] = threadSnapshot.docs.map(doc => ({
-      id: doc.id,
-      content: doc.data().content || doc.data().body,
-      sender: doc.data().from,
-      timestamp: doc.data().receivedAt.toDate().toISOString(),
-      attachments: doc.data().attachments || [],
-    }));
-
-    // Process attachments if any
-    const attachmentsToProcess = messages.flatMap(msg => msg.attachments || []);
-    const processedAttachments = [];
-
-    const openAIService = new OpenAIService(session.user.id);
-    const llamaParseService = new LlamaParseService(session.user.id);
-
-    for (const attachment of attachmentsToProcess) {
-      try {
-        if (attachment.mimeType.startsWith('image/')) {
-          // Process image with GPT-4 Vision
-          const analysis = await openAIService.analyzeImage(attachment.url);
-          processedAttachments.push({
-            ...attachment,
-            content: analysis,
-          });
-        } else if (attachment.mimeType === 'application/pdf') {
-          // Process PDF with LlamaParse
-          const docId = await llamaParseService.parseDocument(attachment.url, attachment.filename);
-          const content = await llamaParseService.getDocumentContent(docId);
-          processedAttachments.push({
-            ...attachment,
-            content: content.text,
-          });
-        }
-      } catch (error) {
-        console.error('[SuggestAPI] Error processing attachment:', error);
-        // Continue with other attachments even if one fails
-      }
-    }
-
-    // Generate AI response
-    const response = await openAIService.generateEmailResponse(messages, processedAttachments);
-
-    // Store the suggestion in Firestore
-    const suggestionRef = await adminDb
-      .collection('users')
-      .doc(session.user.id)
-      .collection('suggestions')
-      .add({
-        threadId: params.threadId,
-        content: response,
-        createdAt: new Date(),
-        status: 'pending', // pending, approved, rejected
-        messageCount: messages.length,
-        attachmentCount: processedAttachments.length,
-      });
-
-    console.log('[SuggestAPI] Successfully generated suggestion:', suggestionRef.id);
-
-    return NextResponse.json({
-      success: true,
-      suggestion: {
-        id: suggestionRef.id,
-        content: response,
-      },
+    const { messageId } = await request.json();
+    console.log('[SuggestAPI] Processing message:', {
+      messageId,
+      threadId,
+      userId: session.user.id
     });
 
-  } catch (error: any) {
-    console.error('[SuggestAPI] Error generating suggestion:', error);
-    
+    // Generate mock suggestion
+    const suggestion = generateMockSuggestion(messageId);
+
+    // Add thread context to the response
+    const response = {
+      success: true,
+      suggestion: {
+        ...suggestion,
+        threadId,
+      },
+    };
+
+    console.log('[SuggestAPI] Sending response:', {
+      success: true,
+      suggestionId: suggestion.id,
+      threadId,
+      contentPreview: suggestion.content.substring(0, 100) + '...'
+    });
+
+    return NextResponse.json(response);
+  } catch (error) {
+    console.error("[SuggestAPI] Error:", error);
     return NextResponse.json(
-      { error: "Failed to generate suggestion. Please try again later." },
+      { error: "Failed to generate suggestion" },
       { status: 500 }
     );
   }

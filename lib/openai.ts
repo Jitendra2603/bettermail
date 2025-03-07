@@ -239,4 +239,55 @@ export class OpenAIService {
       throw new Error('Failed to generate embedding. Please try again later.');
     }
   }
+
+  // Generate a concise 2-3 line summary of document content
+  async generateConciseSummary(content: string, title: string = ''): Promise<string> {
+    try {
+      // Check rate limit
+      await this.checkRateLimit();
+
+      // Prepare the prompt
+      const prompt = `
+Document Title: ${title}
+Document Content:
+${content.substring(0, 8000)}
+
+Task: Generate a concise 2-3 line summary (maximum 200 characters) that gives a detailed overview of what this document is about. 
+Focus on the key information that would help someone understand the document's purpose and main content without reading it.
+`;
+
+      // Call OpenAI API
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that creates concise, informative summaries of documents.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ] as any, // Type assertion to bypass strict typing
+        max_tokens: 150,
+        temperature: 0.3,
+      });
+
+      // Extract and return the summary
+      const summary = response.choices[0]?.message?.content?.trim() || '';
+      
+      // Track usage
+      const inputTokens = response.usage?.prompt_tokens || 0;
+      const outputTokens = response.usage?.completion_tokens || 0;
+      
+      // Use the correct model name for cost tracking
+      const modelForCost = 'gpt-4' as keyof typeof COSTS;
+      await this.trackCost(modelForCost, inputTokens, outputTokens);
+      
+      return summary;
+    } catch (error) {
+      console.error('[OpenAI] Error generating concise summary:', error);
+      throw error;
+    }
+  }
 } 

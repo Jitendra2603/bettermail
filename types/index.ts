@@ -4,7 +4,7 @@ export interface Message {
   htmlContent?: string;  
   sender: "me" | "system" | "ai" | string;
   timestamp: string;
-  type?: "silenced" | "suggestion";
+  type?: "silenced" | "suggestion" | "message" | "info" | "success" | "error";
   mentions?: { id: string; name: string; }[];
   reactions?: Reaction[];
   isEmailThread?: boolean;
@@ -39,6 +39,8 @@ export interface Conversation {
   updatedAt: string;
   isEmailThread?: boolean;
   threadId?: string | null;
+  isTyping?: boolean;
+  lastMessageTime?: string;
 }
 
 export interface Recipient {
@@ -104,6 +106,8 @@ export interface ParsedDocument {
     pageCount?: number;
     wordCount?: number;
     summary?: string;
+    oneLineSummary?: string;
+    conciseSummary?: string;
   };
   embedding?: number[];
   filename: string;
