@@ -4,7 +4,7 @@ export interface Message {
   htmlContent?: string;  
   sender: "me" | "system" | "ai" | string;
   timestamp: string;
-  type?: "silenced" | "suggestion" | "message" | "info" | "success" | "error";
+  type?: "silenced" | "suggestion" | "suggestion-loading" | "message" | "info" | "success" | "error";
   mentions?: { id: string; name: string; }[];
   reactions?: Reaction[];
   isEmailThread?: boolean;
@@ -14,6 +14,9 @@ export interface Message {
     mimeType: string;
     content?: string;
     uploading?: boolean;
+    id?: string;
+    summary?: string;
+    size?: number;
   }[];
   suggestion?: {
     id: string;

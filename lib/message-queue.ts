@@ -318,11 +318,86 @@ export class MessageQueue {
             
             console.error('[MessageQueue] Failed to send email reply:', {
               status: response.status,
-              error: errorData.error
+              error: errorData.error,
+              statusText: response.statusText
             });
 
             if (response.status === 401) {
               throw new Error('Gmail authentication expired - Please reconnect Gmail');
+            }
+            
+            // Handle attachment errors specifically
+            if (errorData.error && errorData.error.includes('attachment')) {
+              // Create error message with more helpful information
+              const errorMessage: Message = {
+                id: crypto.randomUUID(),
+                content: 'Failed to send email with attachments. Trying again without attachments...',
+                sender: 'system',
+                type: 'info',
+                timestamp: new Date().toISOString(),
+              };
+              
+              this.callbacks.onMessageGenerated(task.conversation.id, errorMessage);
+              
+              // Try sending without attachments
+              try {
+                console.log('[MessageQueue] Retrying without attachments');
+                
+                const retryResponse = await fetch(`/api/emails/${task.conversation.threadId}/reply`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    content: lastMessage.content,
+                    to: [recipient],
+                    attachments: [] // No attachments
+                  }),
+                  signal: task.abortController.signal,
+                });
+                
+                if (!retryResponse.ok) {
+                  const retryErrorData = await retryResponse.json().catch(() => ({ error: retryResponse.statusText }));
+                  throw new Error(`Failed to send email without attachments: ${retryErrorData.error || retryResponse.statusText}`);
+                }
+                
+                const retryData = await retryResponse.json();
+                console.log('[MessageQueue] Email sent successfully without attachments:', retryData);
+                
+                // Create success message
+                const successMessage: Message = {
+                  id: crypto.randomUUID(),
+                  content: 'Email sent successfully without attachments. Your reply will appear in Gmail shortly.',
+                  sender: 'system',
+                  type: 'success',
+                  timestamp: new Date().toISOString(),
+                };
+                
+                this.callbacks.onMessageGenerated(task.conversation.id, successMessage);
+                
+                // Clear typing status
+                this.callbacks.onTypingStatusChange(null, null);
+                conversationState.status = "idle";
+                this.processNextTask(conversationId);
+                return;
+              } catch (retryError) {
+                console.error('[MessageQueue] Failed to send email without attachments:', retryError);
+                
+                // Create error message for retry failure
+                const retryErrorMessage: Message = {
+                  id: crypto.randomUUID(),
+                  content: `Failed to send email: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`,
+                  sender: 'system',
+                  type: 'error',
+                  timestamp: new Date().toISOString(),
+                };
+                
+                this.callbacks.onMessageGenerated(task.conversation.id, retryErrorMessage);
+                
+                // Clear typing status
+                this.callbacks.onTypingStatusChange(null, null);
+                conversationState.status = "idle";
+                this.processNextTask(conversationId);
+                return;
+              }
             }
             
             throw new Error(`Failed to send email reply: ${errorData.error || response.statusText}`);
@@ -332,13 +407,27 @@ export class MessageQueue {
           console.log('[MessageQueue] Email reply sent successfully:', data);
 
           // Create success message
-          const successMessage: Message = {
-            id: crypto.randomUUID(),
-            content: 'Email sent successfully! Your reply will appear in Gmail shortly.',
-            sender: 'system',
-            type: 'success',
-            timestamp: new Date().toISOString(),
-          };
+          let successMessage: Message;
+          
+          // Check if there were any attachment issues
+          if (data.warning && data.failedAttachments?.length > 0) {
+            const failedAttachmentNames = data.failedAttachments.join(', ');
+            successMessage = {
+              id: crypto.randomUUID(),
+              content: `Email sent successfully, but some attachments could not be included: ${failedAttachmentNames}. Your reply will appear in Gmail shortly.`,
+              sender: 'system',
+              type: 'info',
+              timestamp: new Date().toISOString(),
+            };
+          } else {
+            successMessage = {
+              id: crypto.randomUUID(),
+              content: 'Email sent successfully! Your reply will appear in Gmail shortly.',
+              sender: 'system',
+              type: 'success',
+              timestamp: new Date().toISOString(),
+            };
+          }
 
           this.callbacks.onMessageGenerated(task.conversation.id, successMessage);
           
@@ -348,45 +437,26 @@ export class MessageQueue {
           return;
         } catch (error) {
           console.error('[MessageQueue] Error sending email reply:', error);
-
-          // Create detailed error message
-          let errorMessage: Message;
-          if (error instanceof Error) {
-            if (error.message.includes('Gmail authentication expired')) {
-              errorMessage = {
-                id: crypto.randomUUID(),
-                content: 'Gmail authentication expired. Please sign out and sign back in to reconnect Gmail.',
-                sender: 'system',
-                type: 'error',
-                timestamp: new Date().toISOString(),
-              };
-            } else {
-              errorMessage = {
-                id: crypto.randomUUID(),
-                content: `Failed to send email: ${error.message}. Please try again.`,
-                sender: 'system',
-                type: 'error',
-                timestamp: new Date().toISOString(),
-              };
-            }
-          } else {
-            errorMessage = {
-              id: crypto.randomUUID(),
-              content: 'An unexpected error occurred while sending the email. Please try again.',
-              sender: 'system',
-              type: 'error',
-              timestamp: new Date().toISOString(),
-            };
-          }
-
+          
+          // Create error message with more details
+          const errorMessage: Message = {
+            id: crypto.randomUUID(),
+            content: error instanceof Error 
+              ? `Failed to send email: ${error.message}` 
+              : 'Failed to send email: An unknown error occurred',
+            sender: 'system',
+            type: 'error',
+            timestamp: new Date().toISOString(),
+          };
+          
           this.callbacks.onMessageGenerated(task.conversation.id, errorMessage);
           
-          // Clear typing status and mark as idle
+          // Clear typing status
           this.callbacks.onTypingStatusChange(null, null);
           conversationState.status = "idle";
-          
-          throw error;
+          this.processNextTask(conversationId);
         }
+        return;
       }
 
       // For regular chat messages, continue with existing logic

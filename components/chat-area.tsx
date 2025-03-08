@@ -60,19 +60,42 @@ async function generateAISuggestion(message: Message, conversation: Conversation
       }),
     });
 
+    // Log detailed response information for debugging
+    console.log('[AI Suggestion] API response status:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      url: response.url
+    });
+
     if (!response.ok) {
-      console.error('[AI Suggestion] API error:', {
-        status: response.status,
-        statusText: response.statusText
-      });
-      throw new Error('Failed to generate suggestion');
+      // Try to get error details from response
+      let errorDetails = '';
+      try {
+        const errorData = await response.json();
+        errorDetails = errorData.error || 'Unknown error';
+        console.error('[AI Suggestion] API error details:', errorData);
+      } catch (parseError) {
+        console.error('[AI Suggestion] Could not parse error response:', parseError);
+      }
+      
+      throw new Error(`Failed to generate suggestion: ${response.status} ${response.statusText} - ${errorDetails}`);
     }
 
-    const data = await response.json();
-    console.log('[AI Suggestion] API response:', {
+    // Parse the response data
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      console.error('[AI Suggestion] Error parsing response JSON:', parseError);
+      throw new Error('Invalid response format from suggestion API');
+    }
+
+    console.log('[AI Suggestion] API response data:', {
       success: data.success,
       hasSuggestion: !!data.suggestion,
-      suggestionPreview: data.suggestion?.content.substring(0, 100) + '...'
+      suggestionPreview: data.suggestion?.content?.substring(0, 100) + '...',
+      attachmentsCount: data.suggestion?.attachments?.length || 0
     });
     
     if (!data.suggestion) {
@@ -83,12 +106,12 @@ async function generateAISuggestion(message: Message, conversation: Conversation
     return {
       id: data.suggestion.id,
       content: data.suggestion.content,
-      relevantDocs: data.suggestion.relevantDocs || [],
       attachments: data.suggestion.attachments || [],
     };
   } catch (error) {
     console.error('[AI Suggestion] Error generating suggestion:', error);
-    return null;
+    // Rethrow the error to be handled by the caller
+    throw error;
   }
 }
 
@@ -178,78 +201,37 @@ export function ChatArea({
     // Check if the message is from someone else (not me)
     const isFromOthers = lastMessage.sender !== 'me' && lastMessage.sender !== 'ai' && lastMessage.sender !== 'system';
 
-    // If it's from others and we haven't generated a suggestion yet
-    if (isFromOthers && !pendingSuggestions[lastMessage.id]) {
-      console.log('[AI Suggestion] Generating suggestion for message:', lastMessage.id);
-      setPendingSuggestions(prev => ({ ...prev, [lastMessage.id]: true }));
+    // Only generate suggestions when explicitly requested, not automatically
+    // if (isFromOthers && !pendingSuggestions[lastMessage.id]) {
+    //   console.log('[AI Suggestion] Generating suggestion for message:', lastMessage.id);
+    //   setPendingSuggestions(prev => ({ ...prev, [lastMessage.id]: true }));
 
-      // Generate suggestion
-      generateAISuggestion(lastMessage, {
-        ...activeConversation,
-        threadId: activeConversation.threadId // Use the conversation's threadId
-      }).then(suggestion => {
-        if (suggestion) {
-          console.log('[AI Suggestion] Creating suggestion message from:', suggestion);
+    //   // Generate suggestion
+    //   generateAISuggestion(lastMessage, {
+    //     ...activeConversation,
+    //     threadId: activeConversation.threadId // Use the conversation's threadId
+    //   }).then(suggestion => {
+    //     if (suggestion) {
+    //       console.log('[AI Suggestion] Creating suggestion message from:', suggestion);
           
-          // Create a proper suggestion message
-          const suggestionMessage: Message = {
-            id: suggestion.id,
-            content: suggestion.content,
-            sender: 'ai',
-            type: 'suggestion',
-            timestamp: new Date().toISOString(),
-            suggestion: {
-              id: suggestion.id,
-              status: 'pending',
-              relevantDocs: suggestion.relevantDocs,
-            },
-            attachments: suggestion.attachments,
-            htmlContent: suggestion.content, // Add HTML content to ensure it renders properly
-          };
+    //       // Create a proper suggestion message
+    //       const suggestionMessage: Message = {
+    //         id: suggestion.id,
+    //         content: suggestion.content,
+    //         sender: "ai",
+    //         type: "suggestion",
+    //         timestamp: new Date().toISOString(),
+    //         reactions: [],
+    //         attachments: suggestion.attachments || [],
+    //       };
 
-          console.log('[AI Suggestion] Created suggestion message:', suggestionMessage);
-
-          // Add suggestion to conversation
-          const updatedConversation = {
-            ...activeConversation,
-            messages: [...activeConversation.messages, suggestionMessage],
-          };
-
-          console.log('[AI Suggestion] Updating conversation with suggestion:', {
-            conversationId: updatedConversation.id,
-            messageCount: updatedConversation.messages.length,
-            lastMessage: updatedConversation.messages[updatedConversation.messages.length - 1]
-          });
-
-          // Update the conversation with the new suggestion
-          onUpdateConversationRecipients?.(
-            updatedConversation.id,
-            updatedConversation.recipients
-          );
-        } else {
-          console.log('[AI Suggestion] No suggestion generated');
-          // Clear the pending state if no suggestion was generated
-          setPendingSuggestions(prev => {
-            const next = { ...prev };
-            delete next[lastMessage.id];
-            return next;
-          });
-        }
-      }).catch(error => {
-        console.error('[AI Suggestion] Error generating suggestion:', error);
-        // Clear the pending state on error
-        setPendingSuggestions(prev => {
-          const next = { ...prev };
-          delete next[lastMessage.id];
-          return next;
-        });
-      });
-    } else {
-      console.log('[AI Suggestion] Skipping suggestion generation:', {
-        isFromOthers,
-        alreadyPending: pendingSuggestions[lastMessage.id]
-      });
-    }
+    //       // Add the suggestion to the conversation
+    //       onMessageGenerated(activeConversation.id, suggestionMessage);
+    //     }
+    //   }).catch(error => {
+    //     console.error('[AI Suggestion] Error generating suggestion:', error);
+    //   });
+    // }
   }, [activeConversation?.messages, onUpdateConversationRecipients]);
 
   // Handle reactions (including suggestion approvals)
@@ -266,22 +248,34 @@ export function ChatArea({
     console.log('[Reaction] Processing reaction:', {
       messageId,
       messageType: message.type,
-      reactionType: reaction.type
+      reactionType: reaction.type,
+      hasAttachments: !!message.attachments?.length,
+      attachmentCount: message.attachments?.length || 0
     });
 
     // If this is a suggestion and it's a thumbs up
     if (message.type === 'suggestion' && reaction.type === 'like') {
       try {
+        // Log the message content and attachments
         console.log('[Reaction] Sending suggestion as message:', {
           content: message.content.substring(0, 100) + '...',
-          hasAttachments: !!message.attachments?.length
+          hasAttachments: !!message.attachments?.length,
+          attachmentCount: message.attachments?.length || 0,
+          attachments: message.attachments?.map(a => ({ 
+            name: a.filename, 
+            type: a.mimeType,
+            url: a.url.substring(0, 30) + '...'
+          }))
         });
 
+        // Ensure we have the attachments
+        const attachments = message.attachments || [];
+        
         // Send the suggestion as a reply
         await onSendMessage(
           message.htmlContent || message.content, // Use HTML content if available
           activeConversation.id,
-          message.attachments
+          attachments
         );
 
         console.log('[Reaction] Suggestion sent, removing suggestion message');
@@ -304,7 +298,22 @@ export function ChatArea({
       } catch (error) {
         console.error('[Reaction] Error sending suggestion:', error);
       }
-    } else {
+    } 
+    // If this is a suggestion and it's a thumbs down
+    else if (message.type === 'suggestion' && reaction.type === 'dislike') {
+      console.log('[Reaction] Received dislike for suggestion:', {
+        messageId,
+        content: message.content.substring(0, 100) + '...',
+        hasAttachments: !!message.attachments?.length
+      });
+      
+      // We don't remove the message here, as the user will provide feedback
+      // The feedback editor is handled in the MessageBubble component
+      
+      // Just pass the reaction to the parent handler
+      onReaction?.(messageId, reaction);
+    } 
+    else {
       // Handle normal reactions
       console.log('[Reaction] Processing normal reaction');
       onReaction?.(messageId, reaction);

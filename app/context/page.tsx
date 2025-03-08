@@ -26,6 +26,10 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
+import { Textarea } from "@/components/ui/textarea";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { CustomLink } from "@/components/ui/custom-link";
 
 interface ContextPageProps {
   searchParams: { [key: string]: string | undefined };
@@ -433,6 +437,9 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<ParsedDocument | null>(null);
   const [collapsedSenders, setCollapsedSenders] = useState<Set<string>>(new Set());
+  const [aiInstructions, setAiInstructions] = useState('');
+  const [isSavingInstructions, setIsSavingInstructions] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -440,6 +447,27 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
       redirect("/");
     }
   }, [session, status]);
+
+  // Load AI instructions when component mounts
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    
+    const fetchAiInstructions = async () => {
+      try {
+        const response = await fetch('/api/context/ai-instructions');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.instructions) {
+            setAiInstructions(data.instructions);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching AI instructions:', error);
+      }
+    };
+    
+    fetchAiInstructions();
+  }, [session?.user?.id]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!session?.user?.id) return;
@@ -572,6 +600,36 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
     });
   };
 
+  const saveAiInstructions = async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      setIsSavingInstructions(true);
+      const response = await fetch('/api/context/ai-instructions', {
+        method: 'POST',
+        body: JSON.stringify({ instructions: aiInstructions }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save AI instructions');
+      }
+
+      toast({
+        description: "AI instructions saved successfully",
+      });
+      setSettingsOpen(false);
+    } catch (error) {
+      console.error('Error saving AI instructions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save AI instructions",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingInstructions(false);
+    }
+  };
+
   // Don't render anything while checking auth
   if (status === 'loading' || isLoading) {
     return <div className="flex items-center justify-center h-screen">
@@ -596,14 +654,16 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b backdrop-blur-xl bg-background/80 sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.back()}
-            className="hover:scale-105 transition-transform"
-          >
-            <Icons.chevronLeft className="h-4 w-4" size={16} />
-          </Button>
+          <CustomLink href="/messages">
+            <motion.button
+              whileHover={{ scale: 1.1, backgroundColor: "var(--muted)" }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              className="p-2 rounded-full hover:bg-muted transition-colors"
+            >
+              <Icons.chevronLeft className="h-4 w-4" />
+            </motion.button>
+          </CustomLink>
           <h1 className="text-xl font-semibold">Context</h1>
         </div>
         <div className="flex items-center gap-3">
@@ -612,21 +672,26 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
             className="w-64 bg-muted/50 border-0 focus-visible:ring-1 transition-all"
             type="search"
           />
-          <Button 
-            className="gap-2 hover:scale-105 transition-transform"
+          <motion.button
+            whileHover={{ scale: 1.05, backgroundColor: "var(--primary-hover)" }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             onClick={() => setUploadOpen(true)}
           >
             <Icons.plus className="h-4 w-4" size={16} />
             Upload
-          </Button>
-          <Button 
-            variant="outline" 
-            className="gap-2 hover:scale-105 transition-transform"
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05, backgroundColor: "var(--accent)" }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            className="flex items-center gap-2 px-4 py-2 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
             onClick={() => setSettingsOpen(true)}
           >
             <Icons.settings className="h-4 w-4" size={16} />
             Manage Knowledge Base
-          </Button>
+          </motion.button>
         </div>
       </div>
 
@@ -741,6 +806,41 @@ export default function ContextPage({ searchParams }: ContextPageProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
+            {/* AI Response Instructions */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-medium">AI Response Instructions</h3>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Customize how the AI should respond when using your context
+                </p>
+                <Textarea 
+                  placeholder="Example: When answering questions about my documents, be concise and professional. Cite specific documents when possible."
+                  className="min-h-[120px] font-mono text-sm"
+                  value={aiInstructions}
+                  onChange={(e) => setAiInstructions(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  These instructions will be used to guide the AI when generating responses based on your documents.
+                </p>
+              </div>
+              <Button 
+                onClick={saveAiInstructions} 
+                disabled={isSavingInstructions}
+                className="w-full"
+              >
+                {isSavingInstructions ? (
+                  <>
+                    <Icons.loader className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Instructions"
+                )}
+              </Button>
+            </div>
+
+            <div className="my-4 border-t" />
+
             <div>
               <h3 className="text-lg font-medium">Email Senders</h3>
               <p className="text-sm text-muted-foreground mb-4">

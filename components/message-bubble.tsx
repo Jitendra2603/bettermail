@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Message, ReactionType, Reaction } from "../types";
+import { Message, ReactionType, Reaction, Attachment } from "../types";
 import { Conversation } from "../types";
 import { useCallback, useState, useRef, useEffect, Fragment } from "react";
 import {
@@ -29,6 +29,9 @@ import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { Textarea } from "@/components/ui/textarea";
 import "@/styles/ai-message.css";
+import { FeedbackEditor } from "./feedback-editor";
+import { submitFeedback, logFeedbackLocally } from "@/lib/feedback-service";
+import { marked } from 'marked';
 
 // Add Document interface at the top
 interface Document {
@@ -603,6 +606,7 @@ export function MessageBubble({
   // State to control the Popover open state and animation
   const [isOpen, setIsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isFeedbackEditorOpen, setIsFeedbackEditorOpen] = useState(false);
   const [editedContent, setEditedContent] = useState(message.content);
   const [editedAttachments, setEditedAttachments] = useState(message.attachments || []);
   const openTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -683,70 +687,123 @@ export function MessageBubble({
         // Play sound for any reaction action
         soundEffects.playReactionSound();
 
+        // If this is an AI suggestion and it's a thumbs down, open the feedback editor
+        if (isAiSuggestion && type === 'dislike') {
+          setIsFeedbackEditorOpen(true);
+          // Still send the reaction to parent
+          onReaction(message.id, reaction);
+          
+          // Close menu and focus input with delay
+          setTimeout(() => {
+            setIsOpen(false);
+            onOpenChange?.(false);
+          }, 500);
+          
+          return;
+        }
+
         // If this is an AI suggestion and it's being approved
         if (isAiSuggestion && type === 'like') {
-          // Convert markdown to HTML for email
-          const htmlContent = `
-            <!DOCTYPE html>
-            <html>
-              <head>
-                <meta charset="utf-8">
-                <style>
-                  body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 800px;
-                    margin: 0 auto;
-                    padding: 20px;
-                  }
-                  pre {
-                    background-color: #f5f5f5;
-                    padding: 15px;
-                    border-radius: 5px;
-                    overflow-x: auto;
-                  }
-                  code {
-                    background-color: #f5f5f5;
-                    padding: 2px 4px;
-                    border-radius: 3px;
-                  }
-                  blockquote {
-                    border-left: 4px solid #ddd;
-                    margin: 0;
-                    padding-left: 15px;
-                    color: #666;
-                  }
-                  table {
-                    border-collapse: collapse;
-                    width: 100%;
-                    margin: 15px 0;
-                  }
-                  th, td {
-                    border: 1px solid #ddd;
-                    padding: 8px;
-                    text-align: left;
-                  }
-                  th {
-                    background-color: #f5f5f5;
-                  }
-                  img {
-                    max-width: 100%;
-                    height: auto;
-                  }
-                  ul, ol {
-                    padding-left: 20px;
-                  }
-                </style>
-              </head>
-              <body>
-                ${message.content}
-              </body>
-            </html>
-          `;
+          try {
+            // If we already have HTML content, use it directly
+            if (!message.htmlContent) {
+              // Convert markdown to HTML for email
+              const markdownContent = message.content;
+              
+              // Use marked to convert markdown to HTML
+              const convertedHtml = marked(markdownContent, {
+                gfm: true,
+                breaks: true
+              });
+              
+              // Wrap the converted HTML in a proper email template
+              const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                  <head>
+                    <meta charset="utf-8">
+                    <style>
+                      body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        max-width: 800px;
+                        margin: 0 auto;
+                        padding: 20px;
+                      }
+                      pre {
+                        background-color: #f5f5f5;
+                        padding: 12px;
+                        border-radius: 4px;
+                        overflow-x: auto;
+                      }
+                      code {
+                        font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+                        font-size: 0.9em;
+                        background-color: #f5f5f5;
+                        padding: 2px 4px;
+                        border-radius: 3px;
+                      }
+                      blockquote {
+                        border-left: 4px solid #ddd;
+                        padding-left: 16px;
+                        margin-left: 0;
+                        color: #666;
+                      }
+                      img {
+                        max-width: 100%;
+                        height: auto;
+                      }
+                      table {
+                        border-collapse: collapse;
+                        width: 100%;
+                      }
+                      table, th, td {
+                        border: 1px solid #ddd;
+                      }
+                      th, td {
+                        padding: 8px;
+                        text-align: left;
+                      }
+                      th {
+                        background-color: #f5f5f5;
+                      }
+                      ul, ol {
+                        padding-left: 20px;
+                      }
+                      a {
+                        color: #0366d6;
+                        text-decoration: none;
+                      }
+                      a:hover {
+                        text-decoration: underline;
+                      }
+                    </style>
+                  </head>
+                  <body>
+                    ${convertedHtml}
+                  </body>
+                </html>
+              `;
 
-          // Send the message with the HTML content
-          message.htmlContent = htmlContent;
+              // Store the HTML content for later use
+              message.htmlContent = htmlContent;
+            }
+            
+            // Make sure attachments are properly included
+            if (message.attachments && message.attachments.length > 0) {
+              console.log('[Reaction] Including attachments:', {
+                count: message.attachments.length,
+                files: message.attachments.map(a => ({ name: a.filename, type: a.mimeType }))
+              });
+            }
+          } catch (error) {
+            console.error('[Reaction] Error converting markdown to HTML:', error);
+            // Fallback to original content if conversion fails
+            if (!message.htmlContent) {
+              message.htmlContent = message.content;
+            }
+          }
         }
 
         // Send reaction to parent
@@ -762,6 +819,161 @@ export function MessageBubble({
     },
     [message, onReaction, onOpenChange, onReactionComplete, isAiSuggestion]
   );
+
+  // Handler for saving feedback from the editor
+  const handleSaveFeedback = async (newContent: string, attachments: Attachment[]) => {
+    try {
+      // Update local state
+      setEditedContent(newContent);
+      
+      // Filter out any attachments with blob URLs
+      const validAttachments = attachments.filter(a => !a.url.startsWith('blob:'));
+      
+      // Check if we lost any attachments in the filtering
+      if (validAttachments.length < attachments.length) {
+        console.warn('[Feedback] Some attachments were filtered out due to invalid URLs:', 
+          attachments.filter(a => a.url.startsWith('blob:'))
+            .map(a => ({ name: a.filename, url: a.url }))
+        );
+      }
+      
+      setEditedAttachments(validAttachments);
+      
+      // Update the message content and attachments
+      const originalContent = message.content;
+      message.content = newContent;
+      message.attachments = validAttachments;
+      
+      // Pre-convert markdown to HTML for later use
+      try {
+        const convertedHtml = marked(newContent, {
+          gfm: true,
+          breaks: true
+        });
+        
+        // Wrap the converted HTML in a proper email template
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                body {
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                  line-height: 1.6;
+                  color: #333;
+                  max-width: 800px;
+                  margin: 0 auto;
+                  padding: 20px;
+                }
+                pre {
+                  background-color: #f5f5f5;
+                  padding: 12px;
+                  border-radius: 4px;
+                  overflow-x: auto;
+                }
+                code {
+                  font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+                  font-size: 0.9em;
+                  background-color: #f5f5f5;
+                  padding: 2px 4px;
+                  border-radius: 3px;
+                }
+                blockquote {
+                  border-left: 4px solid #ddd;
+                  padding-left: 16px;
+                  margin-left: 0;
+                  color: #666;
+                }
+                img {
+                  max-width: 100%;
+                  height: auto;
+                }
+                table {
+                  border-collapse: collapse;
+                  width: 100%;
+                }
+                table, th, td {
+                  border: 1px solid #ddd;
+                }
+                th, td {
+                  padding: 8px;
+                  text-align: left;
+                }
+                th {
+                  background-color: #f5f5f5;
+                }
+                ul, ol {
+                  padding-left: 20px;
+                }
+                a {
+                  color: #0366d6;
+                  text-decoration: none;
+                }
+                a:hover {
+                  text-decoration: underline;
+                }
+              </style>
+            </head>
+            <body>
+              ${convertedHtml}
+            </body>
+          </html>
+        `;
+        
+        // Store the HTML content for later use
+        message.htmlContent = htmlContent;
+      } catch (error) {
+        console.error('[Feedback] Error converting markdown to HTML:', error);
+        // If conversion fails, we'll just use the plain text content
+      }
+      
+      // Try to submit feedback to the server
+      try {
+        await submitFeedback(
+          message.id,
+          originalContent,
+          newContent,
+          validAttachments,
+          conversation?.id,
+          'dislike'
+        );
+      } catch (error) {
+        // If server submission fails, log locally as fallback
+        console.error('Error submitting feedback to server:', error);
+        logFeedbackLocally(
+          message.id,
+          originalContent,
+          newContent,
+          validAttachments,
+          conversation?.id,
+          'dislike'
+        );
+      }
+      
+      toast({
+        description: "Feedback saved. Thank you for your input.",
+      });
+      
+      // Log the attachments for debugging
+      if (validAttachments.length > 0) {
+        console.log('[Feedback] Saved with attachments:', {
+          count: validAttachments.length,
+          files: validAttachments.map(a => ({ name: a.filename, type: a.mimeType, url: a.url.substring(0, 30) + '...' }))
+        });
+      }
+      
+      // Close the feedback editor
+      setIsFeedbackEditorOpen(false);
+    } catch (error) {
+      console.error('Error saving feedback:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save feedback",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Check if a specific reaction type is already active for the current user
   const isReactionActive = (type: ReactionType) => {
@@ -926,8 +1138,8 @@ export function MessageBubble({
             message.type === "silenced" && "bg-muted/50 text-muted-foreground"
           )}
         >
-          {/* Only show recipient name inside bubble if it wasn't already shown above */}
-          {recipientName && !isAiSuggestion && (
+          {/* Only show recipient name inside bubble if it wasn't already shown above and it's not an email thread */}
+          {recipientName && !isAiSuggestion && !message.isEmailThread && (
             <div className="text-[10px] text-muted-foreground pl-4 pb-0.5 bg-background">
               {recipientName}
             </div>
@@ -1369,6 +1581,15 @@ export function MessageBubble({
             onClose={() => setIsEditing(false)}
             content={message.content}
             onSave={(newContent) => handleSaveEdit(newContent)}
+          />
+
+          {/* Feedback Editor */}
+          <FeedbackEditor
+            isOpen={isFeedbackEditorOpen}
+            onClose={() => setIsFeedbackEditorOpen(false)}
+            initialContent={message.content}
+            initialAttachments={message.attachments || []}
+            onSave={handleSaveFeedback}
           />
         </div>
       </div>

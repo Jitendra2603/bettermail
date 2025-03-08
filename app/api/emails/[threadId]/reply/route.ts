@@ -7,8 +7,11 @@ export async function POST(
   request: Request,
   { params }: { params: { threadId: string } }
 ) {
+  // Store threadId in a variable to avoid using params synchronously
+  const threadId = params.threadId;
+  
   try {
-    console.log('[EmailReplyAPI] Processing request for thread:', params.threadId);
+    console.log('[EmailReplyAPI] Processing request for thread:', threadId);
     
     const session = await getServerSession(authOptions);
 
@@ -38,7 +41,7 @@ export async function POST(
     }
 
     console.log('[EmailReplyAPI] Sending reply:', {
-      threadId: params.threadId,
+      threadId,
       to,
       contentLength: content.length,
       hasAttachments: !!attachments?.length
@@ -47,16 +50,53 @@ export async function POST(
     const gmailService = new GmailService(session.accessToken);
     
     try {
+      // Validate attachments before sending
+      const validAttachments = attachments?.filter((attachment: { url?: string; filename?: string; mimeType?: string }) => 
+        attachment && attachment.url && attachment.filename && attachment.mimeType
+      );
+      
+      if (attachments?.length !== validAttachments?.length) {
+        console.warn('[EmailReplyAPI] Some attachments were invalid and will be skipped:', {
+          originalCount: attachments?.length || 0,
+          validCount: validAttachments?.length || 0
+        });
+      }
+      
       const response = await gmailService.sendReply(
         session.user.id,
-        params.threadId,
+        threadId,
         to,
         content,
-        attachments
+        validAttachments
       );
 
       console.log('[EmailReplyAPI] Reply sent successfully:', response);
-      return NextResponse.json({ success: true, messageId: response.id });
+      
+      // Check if any attachments failed
+      if (response.failedAttachments?.length > 0 && response.successfulAttachments?.length === 0) {
+        // All attachments failed
+        return NextResponse.json({ 
+          success: true, 
+          messageId: response.id,
+          warning: "Email sent without attachments because all attachments failed to process",
+          failedAttachments: response.failedAttachments || []
+        });
+      } else if (response.failedAttachments?.length > 0) {
+        // Some attachments failed
+        return NextResponse.json({ 
+          success: true, 
+          messageId: response.id,
+          warning: "Some attachments could not be included in the email",
+          successfulAttachments: response.successfulAttachments || [],
+          failedAttachments: response.failedAttachments || []
+        });
+      }
+      
+      return NextResponse.json({ 
+        success: true, 
+        messageId: response.id,
+        successfulAttachments: response.successfulAttachments || []
+      });
     } catch (error: any) {
       console.error('[EmailReplyAPI] Gmail service error:', error);
       
@@ -65,6 +105,14 @@ export async function POST(
         return NextResponse.json(
           { error: "Gmail authentication expired - Please reconnect Gmail" },
           { status: 401 }
+        );
+      }
+      
+      // Handle attachment errors specifically
+      if (error.message && error.message.includes('attachment')) {
+        return NextResponse.json(
+          { error: `Failed to send reply: There was a problem with one or more attachments. Please try again without attachments.` },
+          { status: 500 }
         );
       }
       

@@ -62,7 +62,7 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_ADMIN_CLIENT_EMAIL }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BETTERMAIL_CB010 }}
           channelId: live
           projectId: bettermail-cb010
           target: messages-lu-vg

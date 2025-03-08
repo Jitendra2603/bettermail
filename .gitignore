@@ -79,3 +79,13 @@ PRD-AI-EMAIL-RESPONSE.md
 PROJECT_STRUCTURE.md
 set-secrets.ps1
 setup-firebase.ps1
+.cursorignore
+.cursorrules
+PRD-AI-EMAIL-RESPONSE.md
+PROJECT_STRUCTURE.md
+vs_buildtools.exe
+yarn.lock
+firestore.rules
+firestore.indexes.rules 
+firebase.json
+.firebaserc

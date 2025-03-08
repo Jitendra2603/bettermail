@@ -230,3 +230,110 @@ html, body {
 * {
   caret-color: #0A7CFF;
 }
+
+/* Shimmer effect for skeleton loading */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--background) 0%,
+    var(--muted) 20%,
+    var(--background) 40%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* Improve page transitions */
+.page-transition-enter {
+  animation: quickFade 0.15s ease forwards;
+}
+
+.page-transition-exit {
+  animation: quickFade 0.15s ease forwards reverse;
+}
+
+@keyframes quickFade {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Hide Next.js loading indicators */
+.nprogress-container {
+  display: none !important;
+}
+
+#nprogress {
+  display: none !important;
+}
+
+#nprogress .bar {
+  display: none !important;
+}
+
+#nprogress .spinner {
+  display: none !important;
+}
+
+/* Smooth link transitions */
+a, button {
+  transition: all 0.15s ease;
+}
+
+/* Shimmer effect for skeleton loading */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-pulse {
+  background: linear-gradient(
+    90deg,
+    var(--background) 25%,
+    var(--muted) 50%,
+    var(--background) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Animation utilities */
+.animate-in {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Navigation state */
+body.navigating {
+  cursor: progress;
+}

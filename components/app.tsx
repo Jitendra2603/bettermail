@@ -686,40 +686,151 @@ export default function App() {
   );
 
   // Method to add AI suggestion
-  const addAiSuggestion = useCallback(() => {
+  const addAiSuggestion = useCallback(async () => {
     console.log('[AI Suggestion] Adding AI suggestion message');
     
     if (!activeConversation) {
       console.log('[AI Suggestion] No active conversation, cannot add suggestion');
       return;
     }
-    
-    // Create a new AI suggestion message
-    const suggestionMessage: Message = {
-      id: generateClientUUID(),
-      content: "this is ai suggestion",
-      sender: "me", // From the user
-      type: "suggestion", // Special type for AI suggestions
-      timestamp: new Date().toISOString(),
-      reactions: [],
-    };
-    
-    console.log('[AI Suggestion] Created suggestion message:', suggestionMessage);
-    
-    // Add the suggestion to the active conversation
-    setConversations((prevConversations) => {
-      return prevConversations.map((conversation) => {
-        if (conversation.id === activeConversation) {
-          console.log('[AI Suggestion] Adding suggestion to conversation:', conversation.id);
-          return {
-            ...conversation,
-            messages: [...conversation.messages, suggestionMessage],
-          };
-        }
-        return conversation;
+
+    // Get the active conversation object
+    const conversation = conversations.find(c => c.id === activeConversation);
+    if (!conversation) {
+      console.log('[AI Suggestion] Active conversation not found');
+      return;
+    }
+
+    // Get the last message in the conversation
+    const lastMessage = conversation.messages[conversation.messages.length - 1];
+    if (!lastMessage) {
+      console.log('[AI Suggestion] No messages in conversation to generate suggestion for');
+      return;
+    }
+
+    try {
+      // Create a temporary loading message - make sure it appears on the right side
+      const loadingMessage: Message = {
+        id: generateClientUUID(),
+        content: "Generating AI suggestion...",
+        sender: "me", // Changed from "ai" to "me" to appear on the right side
+        type: "suggestion-loading",
+        timestamp: new Date().toISOString(),
+        reactions: [],
+      };
+      
+      // Add the loading message to the conversation
+      setConversations((prevConversations) => {
+        return prevConversations.map((conv) => {
+          if (conv.id === activeConversation) {
+            return {
+              ...conv,
+              messages: [...conv.messages, loadingMessage],
+            };
+          }
+          return conv;
+        });
       });
-    });
-  }, [activeConversation]);
+
+      // Call the suggest API
+      console.log('[AI Suggestion] Calling suggest API for thread:', conversation.threadId);
+      const response = await fetch(`/api/emails/${conversation.threadId}/suggest`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageId: lastMessage.id,
+          threadId: conversation.threadId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success || !data.suggestion) {
+        throw new Error('No suggestion returned from API');
+      }
+
+      console.log('[AI Suggestion] Received suggestion from API:', {
+        id: data.suggestion.id,
+        contentPreview: data.suggestion.content.substring(0, 100) + '...',
+        attachmentsCount: data.suggestion.attachments?.length || 0
+      });
+
+      // Create the real suggestion message
+      const suggestionMessage: Message = {
+        id: data.suggestion.id,
+        content: data.suggestion.content,
+        sender: "ai", // This should be "ai" to indicate it's from the AI
+        type: "suggestion",
+        timestamp: new Date().toISOString(),
+        reactions: [],
+        attachments: data.suggestion.attachments || [],
+      };
+
+      // First add the real suggestion message, then remove the loading message in two steps
+      // Step 1: Add the real suggestion message
+      setConversations((prevConversations) => {
+        return prevConversations.map((conv) => {
+          if (conv.id === activeConversation) {
+            return {
+              ...conv,
+              messages: [...conv.messages, suggestionMessage],
+            };
+          }
+          return conv;
+        });
+      });
+      
+      // Step 2: Remove the loading message after a short delay
+      setTimeout(() => {
+        setConversations((prevConversations) => {
+          return prevConversations.map((conv) => {
+            if (conv.id === activeConversation) {
+              return {
+                ...conv,
+                messages: conv.messages.filter(msg => msg.id !== loadingMessage.id),
+              };
+            }
+            return conv;
+          });
+        });
+      }, 100); // Short delay to ensure the real message is rendered first
+    } catch (error) {
+      console.error('[AI Suggestion] Error generating suggestion:', error);
+      
+      // Remove the loading message and show an error
+      setConversations((prevConversations) => {
+        return prevConversations.map((conv) => {
+          if (conv.id === activeConversation) {
+            // Filter out the loading message
+            const messages = conv.messages.filter(msg => 
+              msg.type !== 'suggestion-loading'
+            );
+            
+            // Add an error message
+            const errorMessage: Message = {
+              id: generateClientUUID(),
+              content: `Failed to generate AI suggestion: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              sender: "system",
+              type: "error",
+              timestamp: new Date().toISOString(),
+            };
+            
+            return {
+              ...conv,
+              messages: [...messages, errorMessage],
+            };
+          }
+          return conv;
+        });
+      });
+    }
+  }, [activeConversation, conversations]);
 
   // Method to update conversation name
   const handleUpdateConversationName = useCallback(

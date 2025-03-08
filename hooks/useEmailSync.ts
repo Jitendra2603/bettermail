@@ -23,27 +23,50 @@ export function useEmailSync() {
 
     const setupPushNotifications = async () => {
       try {
+        console.log('[useEmailSync] Setting up Gmail watch...');
+        
         const response = await fetch('/api/watch', {
           method: 'POST',
         });
         
         if (!response.ok) {
-          const error = await response.json();
-          console.error('[useEmailSync] Failed to set up Gmail watch:', error);
-          if (error.shouldRefresh) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          console.error('[useEmailSync] Failed to set up Gmail watch:', errorData);
+          
+          // Don't show error for auth issues - these will be handled by the auth system
+          if (response.status !== 401) {
+            setError(`Failed to sync with Gmail: ${errorData.error || response.statusText}`);
+          }
+          
+          if (errorData.shouldRefresh) {
             // Token needs refresh, reload the page
             window.location.reload();
           }
         } else {
           console.log('[useEmailSync] Successfully set up Gmail watch');
+          setError(null);
         }
       } catch (error) {
         console.error('[useEmailSync] Error setting up Gmail watch:', error);
+        // Don't show error in UI for network issues - they're usually temporary
+        // setError('Failed to connect to Gmail. Please check your internet connection.');
       }
     };
 
     setupPushNotifications();
-  }, [session?.user?.id]);
+    
+    // Set up a retry mechanism for Gmail watch
+    const retryInterval = setInterval(() => {
+      if (error) {
+        console.log('[useEmailSync] Retrying Gmail watch setup...');
+        setupPushNotifications();
+      }
+    }, 60000); // Retry every minute if there's an error
+    
+    return () => {
+      clearInterval(retryInterval);
+    };
+  }, [session?.user?.id, error ? 'error' : 'no-error']);
 
   // Helper function to create a unique message ID
   const createUniqueMessageId = useCallback((email: any) => {

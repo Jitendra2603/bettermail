@@ -9,6 +9,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./api/auth/[...nextauth]/auth-options";
 import { ToastContextProvider } from "@/components/ui/toast";
 import { AIMessageInitializer } from "@/components/ai-message-initializer";
+import { PageTransitionWrapper } from "../components/page-transition-wrapper";
+import Script from "next/script";
+import { NavigationProvider } from "@/providers/NavigationProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -54,6 +57,12 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href={`/apple-touch-icon.png?v=${faviconVersion}`} />
         <link rel="manifest" href="/site.webmanifest" />
         <meta name="theme-color" content="#0A7CFF" />
+        <style dangerouslySetInnerHTML={{ __html: `
+          #nprogress { display: none !important; }
+          .nprogress-container { display: none !important; }
+          #nprogress .bar { display: none !important; }
+          #nprogress .spinner { display: none !important; }
+        `}} />
       </head>
       <body className={inter.className}>
         <ThemeProvider
@@ -64,12 +73,34 @@ export default async function RootLayout({
         >
           <AuthProvider session={session}>
             <ToastContextProvider>
-              {children}
+              <NavigationProvider>
+                <PageTransitionWrapper>
+                  {children}
+                </PageTransitionWrapper>
+              </NavigationProvider>
               <AIMessageInitializer />
             </ToastContextProvider>
           </AuthProvider>
           <Toaster />
         </ThemeProvider>
+        <Script id="disable-nprogress" strategy="beforeInteractive">
+          {`
+            (function() {
+              window.addEventListener('load', function() {
+                var style = document.createElement('style');
+                style.textContent = '#nprogress { display: none !important; }';
+                document.head.appendChild(style);
+              });
+              
+              // Also disable it immediately
+              if (typeof window !== 'undefined') {
+                var style = document.createElement('style');
+                style.textContent = '#nprogress { display: none !important; }';
+                document.head.appendChild(style);
+              }
+            })();
+          `}
+        </Script>
       </body>
     </html>
   );

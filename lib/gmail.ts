@@ -238,29 +238,68 @@ export class GmailService {
 
       // Process based on type
       if (attachment.mimeType.startsWith('image/') && openAIService) {
-        // Process image with GPT-4 Vision
-        const analysis = await openAIService.analyzeImage(publicUrl);
-        
-        // Store in documents collection
-        await adminDb
-          .collection('users')
-          .doc(userId)
-          .collection('documents')
-          .add({
-            filename: attachment.filename,
-            mimeType: attachment.mimeType,
-            url: publicUrl,
-            text: analysis,
-            sender: cleanSender,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            userId,
-            metadata: {
-              size: attachmentData.data.length,
-              uploadedAt: new Date().toISOString()
-            }
-          });
-
+        try {
+          // Process image with GPT-4o
+          console.log('[GmailService] Analyzing image attachment:', attachment.filename);
+          const analysis = await openAIService.analyzeImage(publicUrl);
+          
+          // Store the analysis in Firestore with metadata
+          await adminDb
+            .collection('users')
+            .doc(userId)
+            .collection('documents')
+            .add({
+              filename: attachment.filename,
+              mimeType: attachment.mimeType,
+              url: publicUrl,
+              text: analysis,
+              sender: 'You',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              userId,
+              metadata: {
+                title: `Image: ${attachment.filename}`,
+                size: attachmentData.data.length,
+                uploadedAt: new Date().toISOString(),
+                summary: analysis.substring(0, 200) + (analysis.length > 200 ? '...' : ''),
+                oneLineSummary: analysis.split('.')[0] + '.',
+                imageAnalysis: true
+              },
+              hasEmbedding: false,
+              hasAnalysis: true
+            });
+          
+          console.log('[GmailService] Successfully analyzed image:', attachment.filename);
+        } catch (error) {
+          // Log the error but continue with the email sending process
+          console.error('[GmailService] Error analyzing image, continuing without analysis:', error);
+          
+          // Still store the attachment in Firestore without analysis
+          await adminDb
+            .collection('users')
+            .doc(userId)
+            .collection('documents')
+            .add({
+              filename: attachment.filename,
+              mimeType: attachment.mimeType,
+              url: publicUrl,
+              text: 'Image attachment (analysis not available)',
+              sender: 'You',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              userId,
+              metadata: {
+                title: `Image: ${attachment.filename}`,
+                size: attachmentData.data.length,
+                uploadedAt: new Date().toISOString(),
+                summary: 'Image analysis not available',
+                oneLineSummary: 'Image attachment without analysis',
+                imageAnalysis: false
+              },
+              hasEmbedding: false,
+              hasAnalysis: false
+            });
+        }
       } else if (attachment.mimeType === 'application/pdf' && llamaParseService) {
         // Process PDF with LlamaParse
         await llamaParseService.parseDocument(fileName, attachment.filename, cleanSender);
@@ -439,41 +478,135 @@ export class GmailService {
     }
   }
 
-  async sendReply(userId: string, threadId: string, to: string[], content: string, attachments?: { url: string; filename: string; mimeType: string; }[]) {
+  async sendReply(
+    userId: string, 
+    threadId: string, 
+    to: string[], 
+    content: string, 
+    attachments?: { url: string; filename: string; mimeType: string; }[], 
+    skipAttachments: boolean = false
+  ): Promise<{
+    id: string | null;
+    threadId: string | null;
+    labelIds: string[] | null;
+    successfulAttachments: string[];
+    failedAttachments: string[];
+  }> {
     try {
       console.log('[GmailService] Starting to send reply:', { 
         threadId, 
         to, 
         contentLength: content?.length,
-        hasAttachments: !!attachments?.length 
+        hasAttachments: !!attachments?.length,
+        skipAttachments
       });
 
+      // If skipAttachments is true, ignore any attachments
+      const effectiveAttachments = skipAttachments ? [] : attachments;
+      
       // Get attachment data before sending email
       const attachmentBuffers: { [key: string]: Buffer } = {};
+      const failedAttachments: string[] = [];
+      const successfulAttachments: string[] = [];
       
-      if (attachments?.length) {
-        for (const attachment of attachments) {
-          console.log('[GmailService] Processing attachment:', attachment.filename);
-          
-          // Handle local file URLs differently
-          let buffer: Buffer;
-          if (attachment.url.startsWith('/')) {
-            // For local files, read directly from storage
-            const bucket = adminStorage.bucket();
-            const filePath = attachment.url.replace(/^\//, ''); // Remove leading slash
-            const [fileContent] = await bucket.file(filePath).download();
-            buffer = fileContent;
-          } else {
-            // For remote URLs, fetch the content
-            const response = await fetch(attachment.url);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch attachment: ${response.statusText}`);
+      if (effectiveAttachments?.length) {
+        for (const attachment of effectiveAttachments) {
+          try {
+            console.log('[GmailService] Processing attachment:', attachment.filename, 'URL:', attachment.url);
+            
+            // Skip attachments with invalid URLs
+            if (!attachment.url) {
+              console.warn('[GmailService] Skipping attachment with missing URL:', attachment.filename);
+              failedAttachments.push(attachment.filename);
+              continue;
             }
-            buffer = Buffer.from(await response.arrayBuffer());
+            
+            // Handle local file URLs differently
+            let buffer: Buffer;
+            if (attachment.url.startsWith('/api/')) {
+              // For API endpoints, fetch from the local server
+              try {
+                // Construct the full URL for the API endpoint
+                const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+                const apiUrl = `${baseUrl}${attachment.url}`;
+                
+                console.log('[GmailService] Fetching from API endpoint:', apiUrl);
+                
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                  console.error(`[GmailService] Failed to fetch from API endpoint: ${response.statusText}`, {
+                    status: response.status,
+                    url: apiUrl
+                  });
+                  failedAttachments.push(attachment.filename);
+                  continue;
+                }
+                
+                buffer = Buffer.from(await response.arrayBuffer());
+              } catch (apiError) {
+                console.error('[GmailService] Error fetching from API endpoint:', apiError);
+                failedAttachments.push(attachment.filename);
+                continue;
+              }
+            } else if (attachment.url.startsWith('/')) {
+              // For local files, read directly from storage
+              try {
+                const bucket = adminStorage.bucket();
+                const filePath = attachment.url.replace(/^\//, ''); // Remove leading slash
+                console.log('[GmailService] Fetching file from storage:', filePath);
+                const [fileContent] = await bucket.file(filePath).download();
+                buffer = fileContent;
+              } catch (storageError) {
+                console.error('[GmailService] Error downloading from storage:', storageError);
+                failedAttachments.push(attachment.filename);
+                continue;
+              }
+            } else {
+              // For remote URLs, fetch the content
+              try {
+                console.log('[GmailService] Fetching from URL:', attachment.url);
+                const response = await fetch(attachment.url);
+                if (!response.ok) {
+                  console.error(`[GmailService] Failed to fetch attachment: ${response.statusText}`, {
+                    status: response.status,
+                    url: attachment.url
+                  });
+                  failedAttachments.push(attachment.filename);
+                  continue;
+                }
+                buffer = Buffer.from(await response.arrayBuffer());
+              } catch (fetchError) {
+                console.error('[GmailService] Error fetching attachment:', fetchError);
+                failedAttachments.push(attachment.filename);
+                continue;
+              }
+            }
+            
+            // Store buffer for later use
+            attachmentBuffers[attachment.filename] = buffer;
+            successfulAttachments.push(attachment.filename);
+            console.log('[GmailService] Successfully processed attachment:', attachment.filename, 'Size:', buffer.length);
+          } catch (attachmentError) {
+            console.error('[GmailService] Error processing attachment:', attachment.filename, attachmentError);
+            failedAttachments.push(attachment.filename);
           }
-          
-          // Store buffer for later use
-          attachmentBuffers[attachment.filename] = buffer;
+        }
+      }
+
+      // Log any failed attachments
+      if (failedAttachments.length > 0) {
+        console.warn('[GmailService] Some attachments could not be processed:', failedAttachments);
+      }
+      
+      // If all attachments failed and we wanted to include attachments, try again without attachments
+      if (effectiveAttachments?.length && successfulAttachments.length === 0 && failedAttachments.length > 0) {
+        if (skipAttachments) {
+          // We're already trying without attachments, so this is a real error
+          throw new Error('Failed to send email even without attachments.');
+        } else {
+          // Try again without attachments
+          console.log('[GmailService] All attachments failed, retrying without attachments');
+          return this.sendReply(userId, threadId, to, content, [], true);
         }
       }
 
@@ -533,18 +666,22 @@ export class GmailService {
       ];
 
       // Add attachments if any
-      if (attachments?.length) {
-        for (const attachment of attachments) {
-          const buffer = attachmentBuffers[attachment.filename];
-          emailParts.push(
-            '',
-            `--${mixedBoundary}`,
-            `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
-            'Content-Transfer-Encoding: base64',
-            `Content-Disposition: attachment; filename="${attachment.filename}"`,
-            '',
-            buffer.toString('base64').replace(/(.{76})/g, '$1\r\n')
-          );
+      if (effectiveAttachments?.length) {
+        for (const attachment of effectiveAttachments) {
+          // Only include attachments that were successfully processed
+          if (successfulAttachments.includes(attachment.filename)) {
+            const buffer = attachmentBuffers[attachment.filename];
+            
+            emailParts.push(
+              '',
+              `--${mixedBoundary}`,
+              `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
+              'Content-Transfer-Encoding: base64',
+              `Content-Disposition: attachment; filename="${attachment.filename}"`,
+              '',
+              buffer.toString('base64').replace(/(.{76})/g, '$1\r\n')
+            );
+          }
         }
       }
 
@@ -634,8 +771,8 @@ export class GmailService {
         .set(messageData);
 
       // After successful send, process the attachments for indexing using the data we already have
-      if (attachments?.length && response.data.id) {
-        for (const attachment of attachments) {
+      if (effectiveAttachments?.length && response.data.id) {
+        for (const attachment of effectiveAttachments) {
           const buffer = attachmentBuffers[attachment.filename];
           
           // Upload to Firebase Storage
@@ -702,27 +839,68 @@ export class GmailService {
 
           // Process based on type
           if (attachment.mimeType.startsWith('image/') && openAIService) {
-            // Process image with GPT-4 Vision
-            const analysis = await openAIService.analyzeImage(publicUrl);
-            
-            await adminDb
-              .collection('users')
-              .doc(userId)
-              .collection('documents')
-              .add({
-                filename: attachment.filename,
-                mimeType: attachment.mimeType,
-                url: publicUrl,
-                text: analysis,
-                sender: 'You',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                userId,
-                metadata: {
-                  size: buffer.length,
-                  uploadedAt: new Date().toISOString()
-                }
-              });
+            try {
+              // Process image with GPT-4o
+              console.log('[GmailService] Analyzing image attachment:', attachment.filename);
+              const analysis = await openAIService.analyzeImage(publicUrl);
+              
+              // Store the analysis in Firestore with metadata
+              await adminDb
+                .collection('users')
+                .doc(userId)
+                .collection('documents')
+                .add({
+                  filename: attachment.filename,
+                  mimeType: attachment.mimeType,
+                  url: publicUrl,
+                  text: analysis,
+                  sender: 'You',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  userId,
+                  metadata: {
+                    title: `Image: ${attachment.filename}`,
+                    size: buffer.length,
+                    uploadedAt: new Date().toISOString(),
+                    summary: analysis.substring(0, 200) + (analysis.length > 200 ? '...' : ''),
+                    oneLineSummary: analysis.split('.')[0] + '.',
+                    imageAnalysis: true
+                  },
+                  hasEmbedding: false,
+                  hasAnalysis: true
+                });
+              
+              console.log('[GmailService] Successfully analyzed image:', attachment.filename);
+            } catch (error) {
+              // Log the error but continue with the email sending process
+              console.error('[GmailService] Error analyzing image, continuing without analysis:', error);
+              
+              // Still store the attachment in Firestore without analysis
+              await adminDb
+                .collection('users')
+                .doc(userId)
+                .collection('documents')
+                .add({
+                  filename: attachment.filename,
+                  mimeType: attachment.mimeType,
+                  url: publicUrl,
+                  text: 'Image attachment (analysis not available)',
+                  sender: 'You',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  userId,
+                  metadata: {
+                    title: `Image: ${attachment.filename}`,
+                    size: buffer.length,
+                    uploadedAt: new Date().toISOString(),
+                    summary: 'Image analysis not available',
+                    oneLineSummary: 'Image attachment without analysis',
+                    imageAnalysis: false
+                  },
+                  hasEmbedding: false,
+                  hasAnalysis: false
+                });
+            }
           } else if (attachment.mimeType === 'application/pdf' && llamaParseService) {
             // Process PDF with LlamaParse
             await llamaParseService.parseDocument(fileName, attachment.filename, 'You');
@@ -736,7 +914,14 @@ export class GmailService {
         }
       }
 
-      return response.data;
+      // Return response with information about which attachments were included
+      return {
+        id: response.data.id || null,
+        threadId: response.data.threadId || null,
+        labelIds: response.data.labelIds || null,
+        successfulAttachments,
+        failedAttachments
+      };
     } catch (error) {
       console.error('[GmailService] Error sending reply:', error);
       throw error;
@@ -833,6 +1018,256 @@ export class GmailService {
         throw new Error('AUTH_REFRESH_NEEDED');
       }
 
+      throw error;
+    }
+  }
+
+  async getThread(threadId: string) {
+    try {
+      console.log('[GmailService] Getting thread:', threadId);
+      
+      const response = await this.gmail.users.threads.get({
+        userId: 'me',
+        id: threadId,
+        format: 'full',
+      });
+      
+      if (!response.data || !response.data.messages || response.data.messages.length === 0) {
+        console.error('[GmailService] Thread not found or empty:', threadId);
+        return null;
+      }
+      
+      // Decode each message in the thread
+      const messages = response.data.messages.map(message => this.decodeMessage(message));
+      
+      // Sort messages by date (oldest first)
+      messages.sort((a, b) => {
+        const dateA = new Date(a.timestamp).getTime();
+        const dateB = new Date(b.timestamp).getTime();
+        return dateA - dateB;
+      });
+      
+      console.log('[GmailService] Successfully retrieved thread:', {
+        threadId,
+        messageCount: messages.length
+      });
+      
+      return {
+        id: threadId,
+        messages,
+        historyId: response.data.historyId,
+      };
+    } catch (error) {
+      console.error('[GmailService] Error getting thread:', error);
+      return this.handleAuthError(error);
+    }
+  }
+
+  async sendNewEmail(
+    userId: string, 
+    to: string[], 
+    subject: string, 
+    content: string, 
+    attachments?: { url: string; filename: string; mimeType: string; }[]
+  ): Promise<{
+    id: string | null;
+    threadId: string | null;
+    labelIds: string[] | null;
+    successfulAttachments: string[];
+    failedAttachments: string[];
+  }> {
+    try {
+      console.log('[GmailService] Starting to send new email:', { 
+        to, 
+        subject,
+        contentLength: content?.length,
+        hasAttachments: !!attachments?.length 
+      });
+
+      // Get attachment data before sending email
+      const attachmentBuffers: { [key: string]: Buffer } = {};
+      const failedAttachments: string[] = [];
+      const successfulAttachments: string[] = [];
+      
+      if (attachments?.length) {
+        for (const attachment of attachments) {
+          try {
+            console.log('[GmailService] Processing attachment:', attachment.filename, 'URL:', attachment.url);
+            
+            // Skip attachments with invalid URLs
+            if (!attachment.url) {
+              console.warn('[GmailService] Skipping attachment with missing URL:', attachment.filename);
+              failedAttachments.push(attachment.filename);
+              continue;
+            }
+            
+            // Handle local file URLs differently
+            let buffer: Buffer;
+            if (attachment.url.startsWith('/api/')) {
+              // For API endpoints, fetch from the local server
+              try {
+                // Construct the full URL for the API endpoint
+                const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+                const apiUrl = `${baseUrl}${attachment.url}`;
+                
+                console.log('[GmailService] Fetching from API endpoint:', apiUrl);
+                
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                  console.error(`[GmailService] Failed to fetch from API endpoint: ${response.statusText}`, {
+                    status: response.status,
+                    url: apiUrl
+                  });
+                  failedAttachments.push(attachment.filename);
+                  continue;
+                }
+                
+                buffer = Buffer.from(await response.arrayBuffer());
+              } catch (apiError) {
+                console.error('[GmailService] Error fetching from API endpoint:', apiError);
+                failedAttachments.push(attachment.filename);
+                continue;
+              }
+            } else if (attachment.url.startsWith('/')) {
+              // For local files, read directly from storage
+              try {
+                const bucket = adminStorage.bucket();
+                const filePath = attachment.url.replace(/^\//, ''); // Remove leading slash
+                console.log('[GmailService] Fetching file from storage:', filePath);
+                const [fileContent] = await bucket.file(filePath).download();
+                buffer = fileContent;
+              } catch (storageError) {
+                console.error('[GmailService] Error downloading from storage:', storageError);
+                failedAttachments.push(attachment.filename);
+                continue;
+              }
+            } else {
+              // For remote URLs, fetch the content
+              try {
+                console.log('[GmailService] Fetching from URL:', attachment.url);
+                const response = await fetch(attachment.url);
+                if (!response.ok) {
+                  console.error(`[GmailService] Failed to fetch attachment: ${response.statusText}`, {
+                    status: response.status,
+                    url: attachment.url
+                  });
+                  failedAttachments.push(attachment.filename);
+                  continue;
+                }
+                buffer = Buffer.from(await response.arrayBuffer());
+              } catch (fetchError) {
+                console.error('[GmailService] Error fetching attachment:', fetchError);
+                failedAttachments.push(attachment.filename);
+                continue;
+              }
+            }
+            
+            // Store buffer for later use
+            attachmentBuffers[attachment.filename] = buffer;
+            successfulAttachments.push(attachment.filename);
+            console.log('[GmailService] Successfully processed attachment:', attachment.filename, 'Size:', buffer.length);
+          } catch (attachmentError) {
+            console.error('[GmailService] Error processing attachment:', attachment.filename, attachmentError);
+            failedAttachments.push(attachment.filename);
+          }
+        }
+      }
+
+      // Log any failed attachments
+      if (failedAttachments.length > 0) {
+        console.warn('[GmailService] Some attachments could not be processed:', failedAttachments);
+      }
+      
+      // If all attachments failed and we wanted to include attachments, throw an error
+      if (attachments?.length && successfulAttachments.length === 0 && failedAttachments.length > 0) {
+        throw new Error('All attachments failed to process. Cannot send email with attachments.');
+      }
+
+      // Create the email content
+      const mixedBoundary = `mixed_${Date.now().toString(16)}`;
+      const altBoundary = `alt_${Date.now().toString(16)}`;
+      
+      // Create email headers
+      const emailParts = [
+        'MIME-Version: 1.0',
+        `Content-Type: multipart/mixed; boundary=${mixedBoundary}`,
+        'From: me',
+        `To: ${to.join(', ')}`,
+        `Subject: ${subject}`,
+        '',
+        `--${mixedBoundary}`,
+        `Content-Type: multipart/alternative; boundary=${altBoundary}`,
+        '',
+        `--${altBoundary}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        Buffer.from(content.replace(/<[^>]*>/g, '')).toString('base64').replace(/(.{76})/g, '$1\r\n'),
+        '',
+        `--${altBoundary}`,
+        'Content-Type: text/html; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        Buffer.from(content).toString('base64').replace(/(.{76})/g, '$1\r\n'),
+        '',
+        `--${altBoundary}--`
+      ];
+
+      // Add attachments if any
+      if (attachments?.length) {
+        for (const attachment of attachments) {
+          // Only include attachments that were successfully processed
+          if (successfulAttachments.includes(attachment.filename)) {
+            const buffer = attachmentBuffers[attachment.filename];
+            
+            emailParts.push(
+              '',
+              `--${mixedBoundary}`,
+              `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
+              'Content-Transfer-Encoding: base64',
+              `Content-Disposition: attachment; filename="${attachment.filename}"`,
+              '',
+              buffer.toString('base64').replace(/(.{76})/g, '$1\r\n')
+            );
+          }
+        }
+      }
+
+      // Add final boundary
+      emailParts.push('', `--${mixedBoundary}--`, '');
+
+      // Join all parts with proper line endings
+      const email = emailParts.join('\r\n');
+
+      // Encode the email in base64 format (NOT base64url)
+      const encodedEmail = Buffer.from(email).toString('base64');
+
+      console.log('[GmailService] Sending email:', {
+        length: encodedEmail.length,
+        hasAttachments: !!attachments?.length,
+        firstFewChars: encodedEmail.substring(0, 50) + '...'
+      });
+
+      // Send the email
+      const response = await this.gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+          raw: encodedEmail,
+        },
+      });
+
+      console.log('[GmailService] Email sent successfully:', response.data);
+
+      // Return response with information about which attachments were included
+      return {
+        id: response.data.id || null,
+        threadId: response.data.threadId || null,
+        labelIds: response.data.labelIds || null,
+        successfulAttachments,
+        failedAttachments
+      };
+    } catch (error) {
+      console.error('[GmailService] Error sending email:', error);
       throw error;
     }
   }

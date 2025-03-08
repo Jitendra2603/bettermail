@@ -10,6 +10,9 @@ interface UploadResponse {
   url: string;
   filename: string;
   mimeType: string;
+  id?: string;         // Document ID for reference
+  summary?: string;    // Document summary if available
+  size?: number;       // File size in bytes
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -65,6 +68,11 @@ export function useFileUpload() {
         progress: 100,
         error: null,
       }));
+
+      // Add size if not provided by the API
+      if (!data.size && file.size) {
+        data.size = file.size;
+      }
 
       return data;
     } catch (error) {

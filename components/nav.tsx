@@ -3,7 +3,9 @@
 import { Icons } from "./icons";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { motion } from "framer-motion";
+import { CustomLink } from "./ui/custom-link";
 
 interface NavProps {
   onNewChat: () => void;
@@ -13,6 +15,8 @@ interface NavProps {
 
 export function Nav({ onNewChat, isMobileView, isScrolled }: NavProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isContextPage = pathname === "/context";
 
   // Keyboard shortcut for creating a new chat
   useEffect(() => {
@@ -32,11 +36,21 @@ export function Nav({ onNewChat, isMobileView, isScrolled }: NavProps) {
         e.preventDefault();
         onNewChat();
       }
+      
+      // Add keyboard shortcut for context page
+      if (e.key === "k" && e.altKey) {
+        e.preventDefault();
+        if (isContextPage) {
+          router.push("/messages");
+        } else {
+          router.push("/context");
+        }
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onNewChat]);
+  }, [onNewChat, router, isContextPage]);
 
   return (
     <>
@@ -48,30 +62,48 @@ export function Nav({ onNewChat, isMobileView, isScrolled }: NavProps) {
         )}
       >
         <div className="flex items-center gap-1.5 p-2">
-          <button
-            onClick={() => router.push("/context")}
+          <CustomLink 
+            href={isContextPage ? "/messages" : "/context"}
             className="cursor-pointer group relative"
-            aria-label="Knowledge Base"
+            ariaLabel={isContextPage ? "Messages" : "Knowledge Base"}
           >
-            <div className="w-3 h-3 rounded-full bg-blue-500 group-hover:opacity-80" />
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              className="w-3 h-3 rounded-full bg-blue-500 group-hover:opacity-80"
+            />
             <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none text-xs">
-              <span className="text-background">K</span>
+              <span className="text-background">{isContextPage ? "M" : "K"}</span>
             </span>
-          </button>
-          <button className="group relative cursor-default">
+          </CustomLink>
+          <motion.button 
+            className="group relative cursor-default"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+          >
             <div className="w-3 h-3 rounded-full bg-yellow-500 group-hover:opacity-80" />
             <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none text-xs">
               <span className="text-background">−</span>
             </span>
-          </button>
-          <button className="group relative cursor-default">
+          </motion.button>
+          <motion.button 
+            className="group relative cursor-default"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+          >
             <div className="w-3 h-3 rounded-full bg-green-500 group-hover:opacity-80" />
             <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none text-xs">
               <span className="text-background">+</span>
             </span>
-          </button>
+          </motion.button>
         </div>
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 400, damping: 15 }}
           className={`sm:p-2 hover:bg-muted-foreground/10 rounded-lg ${
             isMobileView ? "p-2" : ""
           }`}
@@ -79,7 +111,7 @@ export function Nav({ onNewChat, isMobileView, isScrolled }: NavProps) {
           aria-label="New conversation (n)"
         >
           <Icons.new />
-        </button>
+        </motion.button>
       </div>
     </>
   );
