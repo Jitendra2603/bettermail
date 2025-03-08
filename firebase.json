@@ -1,12 +1,15 @@
 {
   "hosting": {
     "site": "messages-lu-vg",
-    "public": ".next",
+    "public": ".next/static",
     "cleanUrls": true,
     "rewrites": [
       {
         "source": "**",
-        "function": "nextjsServer"
+        "function": {
+          "functionId": "nextjsServer",
+          "region": "us-central1"
+        }
       }
     ],
     "headers": [
