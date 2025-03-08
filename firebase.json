@@ -1,7 +1,7 @@
 {
   "hosting": {
     "site": "messages-lu-vg",
-    "public": ".next",
+    "public": ".next/standalone",
     "cleanUrls": true,
     "rewrites": [
       {
