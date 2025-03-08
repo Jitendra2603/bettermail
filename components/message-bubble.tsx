@@ -28,6 +28,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { Textarea } from "@/components/ui/textarea";
+import "@/styles/ai-message.css";
 
 // Add Document interface at the top
 interface Document {
@@ -141,6 +142,8 @@ function EditModal({
 // Update MessageContent component to use EditModal
 const MessageContent = ({ message, conversation, isEditing, onEdit, onSaveEdit, onRemoveAttachment }: { message: Message, conversation?: Conversation, isEditing: boolean, onEdit: () => void, onSaveEdit: (newContent: string) => void, onRemoveAttachment: (index: number) => void }) => {
   const [imageLoadErrors, setImageLoadErrors] = useState<{[key: string]: boolean}>({});
+  const [editedContent, setEditedContent] = useState(message.content);
+  const isAiSuggestion = message.type === "suggestion";
 
   // Debug logging only in development mode
   if (process.env.NODE_ENV === 'development') {
@@ -170,10 +173,10 @@ const MessageContent = ({ message, conversation, isEditing, onEdit, onSaveEdit, 
         <div className="flex flex-col gap-2">
           {/* AI Badge */}
           <div className="flex items-center gap-2 mb-2">
-            <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+            <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent hover:bg-secondary/80 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
               <Icons.sparkles className="w-3 h-3 mr-1" />
               AI Suggestion
-            </Badge>
+            </div>
             {message.suggestion?.status && (
               <Badge 
                 variant="secondary" 
@@ -377,6 +380,16 @@ const MessageContent = ({ message, conversation, isEditing, onEdit, onSaveEdit, 
   return (
     <>
       <div className="flex flex-col gap-2">
+        {/* AI Suggestion Badge */}
+        {isAiSuggestion && (
+          <div className="flex items-center gap-2 mb-2">
+            <div className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent hover:bg-secondary/80 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+              <Icons.sparkles className="w-3 h-3 mr-1" />
+              AI Suggestion
+            </div>
+          </div>
+        )}
+        
         {/* Regular Message Content */}
         {message.htmlContent ? (
           <div 
@@ -571,7 +584,7 @@ export function MessageBubble({
   // Determine message sender type and display name
   const isMe = message.sender === "me" || (message.type === "suggestion" && message.sender === "ai");
   const isSystemMessage = message.sender === "system";
-  const isAiSuggestion = message.type === "suggestion" && message.sender === "ai";
+  const isAiSuggestion = message.type === "suggestion";
   const recipientName = !isMe && !isSystemMessage ? message.sender : null;
 
   // Map of reaction types to their SVG paths for the menu
@@ -870,7 +883,10 @@ export function MessageBubble({
   };
 
   return (
-    <div className="flex w-full flex-col relative z-10">
+    <div className={cn(
+      "flex w-full flex-col relative z-10",
+      isAiSuggestion && "message-bubble-ai-suggestion"
+    )}>
       {/* Spacer before messages */}
       <div className="h-1 bg-background" />
       {/* Extra space between messages with reactions */}
@@ -907,12 +923,11 @@ export function MessageBubble({
               ? "bg-primary text-primary-foreground"
               : "bg-muted text-foreground",
             isSystemMessage && "bg-transparent text-muted-foreground shadow-none text-sm py-1",
-            isAiSuggestion && "bg-blue-500 text-white border border-blue-600",
             message.type === "silenced" && "bg-muted/50 text-muted-foreground"
           )}
         >
-          {/* Show recipient name for messages from others */}
-          {recipientName && (
+          {/* Only show recipient name inside bubble if it wasn't already shown above */}
+          {recipientName && !isAiSuggestion && (
             <div className="text-[10px] text-muted-foreground pl-4 pb-0.5 bg-background">
               {recipientName}
             </div>
@@ -970,6 +985,7 @@ export function MessageBubble({
                             ? typingIndicatorSvg
                             : leftBubbleSvg
                         }')`,
+                        ...(isAiSuggestion ? { background: 'transparent' } : {})
                       }
                     : undefined
                 }
@@ -1166,6 +1182,7 @@ export function MessageBubble({
                             ? typingIndicatorSvg
                             : leftBubbleSvg
                         }')`,
+                        ...(isAiSuggestion ? { background: 'transparent' } : {})
                       }
                     : undefined
                 }

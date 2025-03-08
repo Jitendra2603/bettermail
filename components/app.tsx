@@ -685,6 +685,42 @@ export default function App() {
     []
   );
 
+  // Method to add AI suggestion
+  const addAiSuggestion = useCallback(() => {
+    console.log('[AI Suggestion] Adding AI suggestion message');
+    
+    if (!activeConversation) {
+      console.log('[AI Suggestion] No active conversation, cannot add suggestion');
+      return;
+    }
+    
+    // Create a new AI suggestion message
+    const suggestionMessage: Message = {
+      id: generateClientUUID(),
+      content: "this is ai suggestion",
+      sender: "me", // From the user
+      type: "suggestion", // Special type for AI suggestions
+      timestamp: new Date().toISOString(),
+      reactions: [],
+    };
+    
+    console.log('[AI Suggestion] Created suggestion message:', suggestionMessage);
+    
+    // Add the suggestion to the active conversation
+    setConversations((prevConversations) => {
+      return prevConversations.map((conversation) => {
+        if (conversation.id === activeConversation) {
+          console.log('[AI Suggestion] Adding suggestion to conversation:', conversation.id);
+          return {
+            ...conversation,
+            messages: [...conversation.messages, suggestionMessage],
+          };
+        }
+        return conversation;
+      });
+    });
+  }, [activeConversation]);
+
   // Method to update conversation name
   const handleUpdateConversationName = useCallback(
     (name: string) => {
@@ -782,6 +818,7 @@ export default function App() {
           }
           onMessageDraftChange={handleMessageDraftChange}
           unreadCount={totalUnreadCount}
+          onAddAiSuggestion={addAiSuggestion}
         />
       </div>
       <CommandMenu

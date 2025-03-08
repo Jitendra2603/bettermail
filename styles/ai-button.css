@@ -1,0 +1,78 @@
+/* AI Suggestion Button styles */
+.custom-button.ai-suggestion {
+  font-size: 0.75rem;
+  position: relative;
+  background-color: rgba(0, 0, 0, 0.75);
+  overflow: visible;
+  transform: scale(0.85);
+  margin-right: -0.5rem;
+  border-radius: 12px;
+}
+
+/* Glowing animation */
+.custom-button.ai-suggestion::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  width: calc(100% + 0.4em);
+  height: calc(100% + 0.4em);
+  top: -0.2em;
+  left: -0.2em;
+  border-radius: 12px;
+  background: linear-gradient(
+    45deg,
+    rgba(59, 130, 246, 0.8),
+    rgba(147, 51, 234, 0.8),
+    rgba(236, 72, 153, 0.8),
+    rgba(59, 130, 246, 0.8)
+  );
+  background-size: 300% 300%;
+  filter: blur(0.1em);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: glowing 3s ease infinite;
+}
+
+.custom-button.ai-suggestion:hover::before {
+  opacity: 1;
+}
+
+.custom-button.ai-suggestion .button-outter {
+  border-radius: 12px;
+}
+
+.custom-button.ai-suggestion .button-inner {
+  background-image: linear-gradient(
+    135deg,
+    rgba(230, 230, 230, 1),
+    rgba(180, 180, 180, 1)
+  );
+  padding: 0.6em 1em;
+  border-radius: 12px;
+}
+
+.custom-button.ai-suggestion .button-inner span {
+  font-weight: 600;
+  background-image: linear-gradient(
+    135deg,
+    rgba(25, 25, 25, 1),
+    rgba(75, 75, 75, 1)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 0.75rem;
+}
+
+/* Glowing animation keyframes */
+@keyframes glowing {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+} 

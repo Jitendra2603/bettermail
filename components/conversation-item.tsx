@@ -263,6 +263,14 @@ export function ConversationItem({
                           } ${reactionText} "${lastMessage.content}"`;
                     }
 
+                    // Strip HTML tags if content contains HTML
+                    if (lastMessage.htmlContent) {
+                      // Extract just the body content from HTML
+                      const bodyContent = lastMessage.htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || "";
+                      // Remove any remaining HTML tags
+                      return bodyContent.replace(/<[^>]*>/g, '').trim();
+                    }
+
                     return lastMessage.content;
                   })()}
                 </div>

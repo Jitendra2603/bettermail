@@ -1,5 +1,6 @@
 import { Icons } from "./icons/index";
 import { Conversation } from "../types";
+import { Recipient } from "../types";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { initialContacts } from "../data/initial-contacts";
 import { useToast } from "@/hooks/use-toast";
@@ -374,14 +375,23 @@ export function ChatHeader({
 
             if (isEditMode) {
               setIsEditMode(false);
-              onUpdateRecipients?.(currentRecipients.map((name) => ({ name })));
+              onUpdateRecipients?.(currentRecipients.map((name) => ({ 
+                id: name.toLowerCase(), 
+                name 
+              })));
             } else if (isNewChat) {
               if (isMobileView) {
                 setShowResults(false);
-                onCreateConversation?.(currentRecipients.map((name) => ({ name })));
+                onCreateConversation?.(currentRecipients.map((name) => ({ 
+                  id: name.toLowerCase(), 
+                  name 
+                })));
               } else {
                 setShowCompactNewChat?.(true);
-                onCreateConversation?.(currentRecipients.map((name) => ({ name })));
+                onCreateConversation?.(currentRecipients.map((name) => ({ 
+                  id: name.toLowerCase(), 
+                  name 
+                })));
               }
             }
 
@@ -465,13 +475,25 @@ export function ChatHeader({
 
       if (isEditMode && recipientNames.length > 0 && !searchValue) {
         setIsEditMode(false);
-        onUpdateRecipients?.(recipientNames.map((name) => ({ name })));
+        onUpdateRecipients?.(recipientNames.map((name) => ({ 
+          id: name.toLowerCase(), 
+          name 
+        })));
       } else if (
         isNewChat &&
         (!isMobileView || recipientNames.length > 0) &&
         !searchValue
       ) {
-        onCreateConversation?.(recipientNames.map((name) => ({ name })));
+        onCreateConversation?.(
+          recipientInput
+            .split(",")
+            .map((r) => r.trim())
+            .filter((r) => r.length > 0)
+            .map((name) => ({ 
+              id: name.toLowerCase(), 
+              name 
+            }))
+        );
       }
       if (!searchValue) {
         setSearchValue("");
@@ -674,7 +696,10 @@ export function ChatHeader({
           // Only update recipients if we're not in edit mode
           if (!isEditMode && onUpdateRecipients) {
             onUpdateRecipients(
-              newRecipients.split(",").filter((r) => r.trim()).map((name) => ({ name }))
+              newRecipients.split(",").filter((r) => r.trim()).map((name) => ({ 
+                id: name.toLowerCase(), 
+                name 
+              }))
             );
           }
         }}
@@ -817,9 +842,9 @@ export function ChatHeader({
                       <ContactDrawer
                         recipientCount={activeConversation.recipients.length}
                         recipients={
-                          activeConversation?.recipients.map((recipient) => {
+                          activeConversation.recipients.map((recipient) => {
                             const contact = initialContacts.find(
-                              (p) => p.name === recipient.name
+                              (c) => c.name === recipient.name
                             );
                             return {
                               name: recipient.name,
@@ -829,12 +854,20 @@ export function ChatHeader({
                             };
                           }) || []
                         }
-                        onUpdateName={onUpdateConversationName}
+                        onUpdateName={(name) => {
+                          if (onUpdateConversationName && activeConversation) {
+                            onUpdateConversationName(activeConversation.id, name);
+                          }
+                        }}
                         conversationName={activeConversation.name}
                         onAddContact={() => {
                           setIsEditMode(true);
                         }}
-                        onHideAlertsChange={onHideAlertsChange}
+                        onHideAlertsChange={(hide) => {
+                          if (onHideAlertsChange && activeConversation) {
+                            onHideAlertsChange(activeConversation.id, hide);
+                          }
+                        }}
                         hideAlerts={activeConversation.hideAlerts}
                       />
                     )}

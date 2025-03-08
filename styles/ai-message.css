@@ -1,0 +1,267 @@
+/* AI Message Bubble - Dark Skeuomorphic Design */
+
+/* Reset all previous styles */
+.message-bubble-ai-suggestion * {
+  background: initial;
+}
+
+/* Make only specific elements transparent */
+.message-bubble-ai-suggestion > div.relative {
+  background: transparent !important;
+  position: relative !important;
+}
+
+.message-bubble-ai-suggestion .flex-1.bg-background {
+  background: transparent !important;
+}
+
+/* Hide the white border */
+.message-bubble-ai-suggestion .absolute.border-r-\[0\.5px\] {
+  display: none !important;
+}
+
+/* Keep the message content styling with animated border */
+.message-bubble-ai-suggestion .prose {
+  background: rgba(30, 30, 30, 0.95) !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  margin-top: 12px !important;
+  position: relative !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+  animation: pulse-border 2s infinite alternate !important;
+  transition: all 0.3s ease !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+/* Hide content during state transitions */
+.message-bubble-ai-suggestion.state-gathering .prose,
+.message-bubble-ai-suggestion.state-understanding .prose,
+.message-bubble-ai-suggestion.state-writing .prose {
+  min-height: 60px !important;
+}
+
+/* Show a loading placeholder during transitions */
+.message-bubble-ai-suggestion.state-gathering .prose::before,
+.message-bubble-ai-suggestion.state-understanding .prose::before,
+.message-bubble-ai-suggestion.state-writing .prose::before {
+  content: "AI is preparing a response...";
+  color: rgba(255, 255, 255, 0.5) !important;
+  font-style: italic !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+@keyframes pulse-border {
+  0% {
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+  100% {
+    border-color: rgba(100, 180, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(100, 180, 255, 0.15);
+  }
+}
+
+.message-bubble-ai-suggestion .text-white,
+.message-bubble-ai-suggestion .prose p {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Position the AI badge in the top left corner, half in half out */
+.message-bubble-ai-suggestion .inline-flex.items-center.rounded-md.border {
+  font-size: 0 !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 10px !important;
+  transform: translateY(-50%) !important;
+  z-index: 10 !important;
+  background: none !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  width: 32px !important;
+  height: 32px !important;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1) !important;
+}
+
+/* Create dark metallic skeuomorphic badge */
+.message-bubble-ai-suggestion .inline-flex.items-center.rounded-md.border::before {
+  content: "";
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 50% !important;
+  background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.8) !important;
+  z-index: 1 !important;
+  animation: metallic-shine 3s infinite alternate !important;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1) !important;
+}
+
+@keyframes metallic-shine {
+  0% {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important;
+    box-shadow: 
+      0 4px 8px rgba(0, 0, 0, 0.5),
+      inset 0 1px 1px rgba(255, 255, 255, 0.1),
+      inset 0 -1px 1px rgba(0, 0, 0, 0.8) !important;
+  }
+  50% {
+    background: linear-gradient(135deg, #333, #222) !important;
+    box-shadow: 
+      0 4px 12px rgba(0, 0, 0, 0.6),
+      inset 0 1px 2px rgba(255, 255, 255, 0.15),
+      inset 0 -1px 1px rgba(0, 0, 0, 0.9) !important;
+  }
+  100% {
+    background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important;
+    box-shadow: 
+      0 4px 8px rgba(0, 0, 0, 0.5),
+      inset 0 1px 1px rgba(255, 255, 255, 0.1),
+      inset 0 -1px 1px rgba(0, 0, 0, 0.8) !important;
+  }
+}
+
+/* Add shine effect */
+.message-bubble-ai-suggestion .inline-flex.items-center.rounded-md.border::after {
+  content: "AI";
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 12px !important;
+  font-weight: bold !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8) !important;
+  z-index: 3 !important;
+  background: none !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Style the AI icon */
+.message-bubble-ai-suggestion .inline-flex.items-center svg {
+  width: 16px !important;
+  height: 16px !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5)) !important;
+  position: relative !important;
+  z-index: 3 !important;
+  opacity: 0 !important;
+}
+
+/* Hide the Edit Response button */
+.message-bubble-ai-suggestion button {
+  display: none !important;
+}
+
+/* Fix the "Delivered" text background */
+.message-bubble-ai-suggestion + .text-\[10px\].text-gray-500.pt-1.pr-1.bg-background {
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* Reduce the height of the message container */
+.message-bubble-ai-suggestion .flex-col.gap-2 {
+  gap: 0 !important;
+}
+
+/* Animation states for the AI badge */
+/* State 1: Gathering */
+.message-bubble-ai-suggestion.state-gathering .inline-flex.items-center.rounded-md.border::before {
+  background: linear-gradient(135deg, #2a3a4a, #1a2a3a) !important;
+  border-color: rgba(100, 180, 255, 0.2) !important;
+}
+
+.message-bubble-ai-suggestion.state-gathering .inline-flex.items-center.rounded-md.border::after {
+  content: "";
+  animation: gathering-dots 1.5s infinite !important;
+}
+
+@keyframes gathering-dots {
+  0%, 100% { content: "."; }
+  33% { content: ".."; }
+  66% { content: "..."; }
+}
+
+/* State 2: Understanding */
+.message-bubble-ai-suggestion.state-understanding .inline-flex.items-center.rounded-md.border::before {
+  background: linear-gradient(135deg, #3a2a4a, #2a1a3a) !important;
+  border-color: rgba(180, 100, 255, 0.2) !important;
+}
+
+.message-bubble-ai-suggestion.state-understanding .inline-flex.items-center.rounded-md.border::after {
+  content: "";
+  animation: understanding-pulse 1.5s infinite alternate !important;
+}
+
+@keyframes understanding-pulse {
+  0% { opacity: 0.7; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1.05); }
+}
+
+/* State 3: Writing */
+.message-bubble-ai-suggestion.state-writing .inline-flex.items-center.rounded-md.border::before {
+  background: linear-gradient(135deg, #2a4a3a, #1a3a2a) !important;
+  border-color: rgba(100, 255, 180, 0.2) !important;
+}
+
+.message-bubble-ai-suggestion.state-writing .inline-flex.items-center.rounded-md.border::after {
+  content: "✓";
+  animation: writing-blink 1s infinite alternate !important;
+}
+
+@keyframes writing-blink {
+  0% { text-shadow: 0 0 2px rgba(100, 255, 180, 0.5); }
+  100% { text-shadow: 0 0 8px rgba(100, 255, 180, 0.8); }
+}
+
+/* State 4: Complete */
+.message-bubble-ai-suggestion.state-complete .inline-flex.items-center.rounded-md.border::before {
+  background: linear-gradient(135deg, #2a2a2a, #1a1a1a) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.8) !important;
+}
+
+.message-bubble-ai-suggestion.state-complete .inline-flex.items-center.rounded-md.border::after {
+  content: "AI";
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+/* Transition between states */
+.message-bubble-ai-suggestion.transitioning .inline-flex.items-center.rounded-md.border::before {
+  filter: blur(3px) !important;
+  transform: scale(1.1) !important;
+  opacity: 0.8 !important;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1) !important;
+}
+
+.message-bubble-ai-suggestion.transitioning .inline-flex.items-center.rounded-md.border::after {
+  filter: blur(2px) !important;
+  opacity: 0.5 !important;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1) !important;
+}
+
+/* Add a subtle glow to the badge when transitioning */
+.message-bubble-ai-suggestion.transitioning .inline-flex.items-center.rounded-md.border {
+  box-shadow: 0 0 15px rgba(100, 180, 255, 0.3) !important;
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1) !important;
+} 

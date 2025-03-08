@@ -8,6 +8,7 @@ import { AuthProvider } from "@/providers/AuthProvider";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./api/auth/[...nextauth]/auth-options";
 import { ToastContextProvider } from "@/components/ui/toast";
+import { AIMessageInitializer } from "@/components/ai-message-initializer";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -64,6 +65,7 @@ export default async function RootLayout({
           <AuthProvider session={session}>
             <ToastContextProvider>
               {children}
+              <AIMessageInitializer />
             </ToastContextProvider>
           </AuthProvider>
           <Toaster />

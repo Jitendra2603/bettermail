@@ -13,6 +13,7 @@ import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useFileUpload } from "@/hooks/use-file-upload";
+import "@/styles/ai-button.css";
 
 interface ChatAreaProps {
   isNewChat: boolean;
@@ -35,6 +36,7 @@ interface ChatAreaProps {
   messageDraft?: string;
   onMessageDraftChange?: (conversationId: string, message: string) => void;
   unreadCount?: number;
+  onAddAiSuggestion?: () => void;
 }
 
 // Add this function to generate AI suggestions
@@ -108,6 +110,7 @@ export function ChatArea({
   messageDraft = "",
   onMessageDraftChange,
   unreadCount = 0,
+  onAddAiSuggestion,
 }: ChatAreaProps) {
   const [showCompactNewChat, setShowCompactNewChat] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -472,20 +475,41 @@ export function ChatArea({
         </div>
       </ScrollArea>
       <div className="absolute bottom-0 left-0 right-0 z-50 mb-[env(keyboard-inset-height,0px)]">
-        <MessageInput
-          key={messageInputKey}
-          ref={messageInputRef}
-          message={messageDraft}
-          setMessage={handleMessageChange}
-          handleSend={handleSend}
-          disabled={isNewChat && !recipientInput}
-          recipients={conversationRecipients}
-          isMobileView={isMobileView}
-          conversationId={conversationId || undefined}
-          isNewChat={isNewChat}
-          onFileUpload={handleFileUpload}
-          attachments={attachments}
-        />
+        <div className="flex items-center">
+          {/* AI Suggestion Button */}
+          {onAddAiSuggestion && (
+            <button
+              onClick={onAddAiSuggestion}
+              className="custom-button ai-suggestion ml-2"
+              title="Generate AI suggestion"
+            >
+              <div className="button-outter">
+                <div className="button-inner">
+                  <span className="flex items-center gap-1">
+                    <Icons.sparkles className="h-3 w-3" />
+                    AI
+                  </span>
+                </div>
+              </div>
+            </button>
+          )}
+          <div className="flex-1">
+            <MessageInput
+              key={messageInputKey}
+              ref={messageInputRef}
+              message={messageDraft}
+              setMessage={handleMessageChange}
+              handleSend={handleSend}
+              disabled={isNewChat && !recipientInput}
+              recipients={conversationRecipients}
+              isMobileView={isMobileView}
+              conversationId={conversationId || undefined}
+              isNewChat={isNewChat}
+              onFileUpload={handleFileUpload}
+              attachments={attachments}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
