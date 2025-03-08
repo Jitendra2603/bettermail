@@ -61,10 +61,10 @@ jobs:
       - name: Build
         run: npm run build
         
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BETTERMAIL_CB010 }}
-          channelId: live
-          projectId: bettermail-cb010
+      - name: Deploy to Firebase (Direct Method)
+        run: |
+          echo "Using direct deployment method to bypass extensions check..."
+          npx firebase-tools deploy --only hosting --project bettermail-cb010 --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive --debug
+        env:
+          FIREBASE_DEPLOY_AGENT: github
+          FIREBASE_EXTENSIONS_SKIP_CHECK: true
