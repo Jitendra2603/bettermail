@@ -1,0 +1,52 @@
+# Settings for Backend (on Cloud Run).
+# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
+runConfig:
+  minInstances: 0
+  # maxInstances: 100
+  # concurrency: 80
+  # cpu: 1
+  # memoryMiB: 512
+
+  # Environment variables and secrets.
+  # env:
+  # Configure environment variables.
+  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
+  # - variable: MESSAGE
+  #   value: Hello world!
+  #   availability:
+  #     - BUILD
+  #     - RUNTIME
+
+  # Grant access to secrets in Cloud Secret Manager.
+  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
+  # - variable: MY_SECRET
+  #   secret: mySecretRef
+
+runtime: nodejs20
+build:
+  commands:
+    - npm ci
+    - npm run build
+run:
+  command: npm start
+  env:
+    NODE_ENV: production
+    NEXT_TELEMETRY_DISABLED: 1
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: bettermail-cb010
+    NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyCOttqMVTqbbulUrSzw6zmcxjgykfbtQGE
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: bettermail-cb010.firebaseapp.com
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: bettermail-cb010.firebasestorage.app
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: 299168470266
+    NEXT_PUBLIC_FIREBASE_APP_ID: 1:299168470266:web:c63587cb766fda31962543
+    NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: G-ZBQMRZ5D97
+    NEXTAUTH_URL: https://messages.lu.vg
+    ADMIN_PROJECT_ID: bettermail-cb010
+    ADMIN_CLIENT_EMAIL: firebase-adminsdk-fbsvc@bettermail-cb010.iam.gserviceaccount.com
+    NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
+
+# Secrets are stored in Cloud Secret Manager
+env:
+  - variable: ADMIN_PRIVATE_KEY
+    secret: admin-private-key
+  - variable: NEXTAUTH_SECRET
+    secret: nextauth-secret
