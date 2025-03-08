@@ -54,9 +54,6 @@ jobs:
           
       - name: Install dependencies
         run: npm install --legacy-peer-deps
-      # Add this after the "Install dependencies" step:
-      - name: Fix SWC dependencies
-        run: npx next telemetry disable && npx next
         
       - name: Install Functions dependencies
         run: cd functions && npm install --legacy-peer-deps
