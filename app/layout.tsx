@@ -17,6 +17,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: siteConfig.title,
+  metadataBase: new URL(`https://${siteConfig.domain}`),
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
