@@ -3,6 +3,7 @@ import { MessageBubble } from "./message-bubble";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { soundEffects } from "@/lib/sound-effects";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface MessageListProps {
   messages: Message[];
@@ -119,53 +120,66 @@ export function MessageList({
     <div ref={messageListRef} className="flex-1 flex flex-col-reverse relative">
       {/* Messages layer */}
       <div className="flex-1 relative">
-        {messages
-          .filter(message => message.type !== 'silenced')
-          .map((message, index) => (
-          <div
-            key={message.id}
-            data-message-id={message.id}
-            className="relative"
-          >
-            {/* Overlay for non-active messages */}
-            {isAnyReactionMenuOpen && message.id !== activeMessageId && (
-              <div className="absolute inset-0 bg-white/90 dark:bg-[#1A1A1A]/90 pointer-events-none z-20" />
-            )}
-            <div className={cn(message.id === activeMessageId && "z-30")}>
-              <MessageBubble
-                message={message}
-                isLastUserMessage={index === lastUserMessageIndex}
-                conversation={conversation}
-                isTyping={false}
-                onReaction={onReaction}
-                onOpenChange={(isOpen) => {
-                  setActiveMessageId(isOpen ? message.id : null);
-                  setIsAnyReactionMenuOpen(isOpen);
-                }}
-                onReactionComplete={() => {
-                  messageInputRef?.current?.focus();
-                  onReactionComplete?.();
-                }}
-                justSent={message.id === lastSentMessageId}
-                isMobileView={isMobileView}
-              />
-            </div>
-          </div>
-        ))}
-        {isTypingInThisConversation && (
-          <div>
-            <MessageBubble
-              message={{
-                id: "typing",
-                content: "",
-                sender: typingStatus.recipient,
-                timestamp: new Date().toLocaleTimeString(),
+        <AnimatePresence initial={false}>
+          {messages
+            .filter(message => message.type !== 'silenced')
+            .map((message, index) => (
+            <motion.div
+              key={`${message.id}-${index}`}
+              data-message-id={message.id}
+              className="relative"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ 
+                duration: 0.3,
+                type: "spring",
+                stiffness: 500,
+                damping: 30
               }}
-              isTyping={true}
-              conversation={conversation}
-              isMobileView={isMobileView}
-            />
-          </div>
+            >
+              {/* Overlay for non-active messages */}
+              {isAnyReactionMenuOpen && message.id !== activeMessageId && (
+                <div className="absolute inset-0 bg-white/90 dark:bg-[#1A1A1A]/90 pointer-events-none z-20" />
+              )}
+              <div className={cn(message.id === activeMessageId && "z-30")}>
+                <MessageBubble
+                  message={message}
+                  isLastUserMessage={index === lastUserMessageIndex}
+                  conversation={conversation}
+                  isTyping={false}
+                  onReaction={onReaction}
+                  onOpenChange={(isOpen) => {
+                    setActiveMessageId(isOpen ? message.id : null);
+                    setIsAnyReactionMenuOpen(isOpen);
+                  }}
+                  onReactionComplete={() => {
+                    messageInputRef?.current?.focus();
+                    onReactionComplete?.();
+                  }}
+                  justSent={message.id === lastSentMessageId}
+                  isMobileView={isMobileView}
+                />
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {isTypingInThisConversation && (
+          <motion.div 
+            className="p-4 flex items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "600ms" }}></div>
+            </div>
+            <span className="text-sm text-muted-foreground ml-2">
+              {typingStatus.recipient} is typing...
+            </span>
+          </motion.div>
         )}
       </div>
       <div className="h-2 bg-background" />

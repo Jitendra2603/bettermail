@@ -49,6 +49,7 @@ export interface Conversation {
 export interface Recipient {
   id: string;
   name: string;
+  email?: string;
   avatar?: string;
   bio?: string;
   title?: string;

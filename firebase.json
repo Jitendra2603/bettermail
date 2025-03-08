@@ -1,7 +1,6 @@
 {
   "hosting": {
     "site": "messages-lu-vg",
-    "target": "messages-lu-vg",
     "public": "out",
     "cleanUrls": true,
     "rewrites": [

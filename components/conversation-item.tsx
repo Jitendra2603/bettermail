@@ -11,6 +11,8 @@ import {
 import { Icons } from "./icons";
 import { useTheme } from "next-themes";
 import Image from "next/image";
+import { GroupAvatar } from "./group-avatar";
+import { motion } from "framer-motion";
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -151,22 +153,34 @@ export function ConversationItem({
         <div className="absolute left-0.5 w-2.5 h-2.5 bg-[#0A7CFF] rounded-full flex-shrink-0" />
       )}
       <div className="flex items-center gap-2 w-full px-4">
-        <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-          {conversation.recipients[0].avatar ? (
-            <Image
-              src={conversation.recipients[0].avatar}
-              alt=""
-              className="w-full h-full object-cover"
-              width={40}
-              height={40}
-              sizes="40px"
-              fill={false}
-            />
+        <div className="flex-shrink-0">
+          {conversation.recipients.length > 1 ? (
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.2 }}
+            >
+              <GroupAvatar recipients={conversation.recipients} size="md" />
+            </motion.div>
+          ) : conversation.recipients[0]?.avatar ? (
+            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+              <Image
+                src={conversation.recipients[0].avatar}
+                alt=""
+                className="w-full h-full object-cover"
+                width={40}
+                height={40}
+                sizes="40px"
+                fill={false}
+              />
+            </div>
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
-              <span className="relative text-white text-md font-medium">
-                {getInitials(conversation.recipients[0].name)}
-              </span>
+            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
+                <span className="relative text-white text-md font-medium">
+                  {getInitials(conversation.recipients[0].name)}
+                </span>
+              </div>
             </div>
           )}
         </div>

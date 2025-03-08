@@ -66,4 +66,3 @@ jobs:
           channelId: live
           projectId: bettermail-cb010
           target: messages-lu-vg
-          firebaseHostingSite: messages-lu-vg

@@ -11,6 +11,7 @@ import { ContactDrawer } from "./contact-drawer";
 import { signOut } from "next-auth/react";
 import { Button } from "./ui/button";
 import "@/styles/button.css";
+import { useRouter } from "next/navigation";
 
 // Helper to check if we can add more recipients
 const hasReachedMaxRecipients = (recipients: string) => {
@@ -342,6 +343,7 @@ export function ChatHeader({
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -891,13 +893,13 @@ export function ChatHeader({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                handleSync();
+                router.push('/chat');
               }}
               className="custom-button sync"
             >
               <div className="button-outter">
                 <div className="button-inner">
-                  <span>Sync Emails</span>
+                  <span>Fast Chat</span>
                 </div>
               </div>
             </button>
@@ -981,13 +983,13 @@ export function ChatHeader({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                handleSync();
+                router.push('/chat');
               }}
               className="custom-button sync"
             >
               <div className="button-outter">
                 <div className="button-inner">
-                  <span>Sync Emails</span>
+                  <span>Fast Chat</span>
                 </div>
               </div>
             </button>
