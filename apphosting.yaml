@@ -42,7 +42,6 @@ run:
     NEXTAUTH_URL: https://messages.lu.vg
     NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
     ADMIN_PROJECT_ID: bettermail-cb010
-    ADMIN_CLIENT_EMAIL: firebase-adminsdk-fbsvc@bettermail-cb010.iam.gserviceaccount.com
 
 # Secrets are stored in Cloud Secret Manager
 env:
@@ -50,3 +49,5 @@ env:
     secret: admin-private-key
   - variable: NEXTAUTH_SECRET
     secret: nextauth-secret
+  - variable: ADMIN_CLIENT_EMAIL
+    secret: ADMIN_CLIENT_EMAIL
