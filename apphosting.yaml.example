@@ -10,11 +10,13 @@ run:
     NEXT_TELEMETRY_DISABLED: 1
     # Public environment variables can be included directly
     NEXT_PUBLIC_FIREBASE_PROJECT_ID: bettermail-cb010
+    NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyCOttqMVTqbbulUrSzw6zmcxjgykfbtQGE
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: bettermail-cb010.firebaseapp.com
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: bettermail-cb010.firebasestorage.app
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: 299168470266
     NEXT_PUBLIC_FIREBASE_APP_ID: 1:299168470266:web:c63587cb766fda31962543
     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: G-ZBQMRZ5D97
+    NEXTAUTH_URL: https://messages.lu.vg
     NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
     # Admin credentials and secrets should be stored in Cloud Secret Manager
     ADMIN_PROJECT_ID: bettermail-cb010
