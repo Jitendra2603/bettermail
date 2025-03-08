@@ -1,23 +1,8 @@
-const functions = require('firebase-functions');
-const { nextjsServer } = require('./server');
+const { onRequest } = require('firebase-functions/v2/https');
+const server = require('./server');
 
-// Initialize the Next.js app only once (outside the function handler)
-const app = next({
-  dev: false,
-  conf: {
-    distDir: '.next',
-  },
-});
-const handle = app.getRequestHandler();
-
-// Initialize the app once
-let initialized = false;
-async function ensureInitialized() {
-  if (!initialized) {
-    await app.prepare();
-    initialized = true;
-  }
-}
-
-// This is the Cloud Function that will be triggered by Firebase Hosting
-exports.nextjsServer = nextjsServer; 
+// Export the Next.js server function
+exports.nextjsServer = onRequest({
+  memory: '1GiB',
+  timeoutSeconds: 60,
+}, server.nextjsServer); 
