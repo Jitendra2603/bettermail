@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  distDir: '.next',
   images: {
     remotePatterns: [
       {
@@ -41,6 +42,11 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    turbotrace: {
+      logLevel: 'error'
+    }
+  }
 }
 
 module.exports = nextConfig 
