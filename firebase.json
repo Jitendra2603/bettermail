@@ -7,9 +7,31 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "frameworksBackend": {
-      "region": "us-central1"
-    },
+    "rewrites": [
+      {
+        "source": "/messages/**",
+        "destination": "/messages/index.html"
+      },
+      {
+        "source": "/context/**",
+        "destination": "/context/index.html"
+      },
+      {
+        "source": "/login/**",
+        "destination": "/login/index.html"
+      },
+      {
+        "source": "/api/**",
+        "function": {
+          "functionId": "nextjsServer",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
     "headers": [
       {
         "source": "**/*.@(jpg|jpeg|gif|png|svg|webp|js|css|eot|otf|ttf|ttc|woff|woff2|font.css)",

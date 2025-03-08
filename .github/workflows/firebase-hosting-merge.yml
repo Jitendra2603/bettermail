@@ -61,10 +61,15 @@ jobs:
       - name: Build
         run: npm run build
         
+      - name: Copy Next.js build to functions
+        run: |
+          mkdir -p functions/.next
+          cp -r .next/* functions/.next/
+        
       - name: Deploy to Firebase (Direct Method)
         run: |
           echo "Using direct deployment method to bypass extensions check..."
-          npx firebase-tools deploy --only hosting --project bettermail-cb010 --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive --debug
+          npx firebase-tools deploy --only hosting,functions:nextjsServer --project bettermail-cb010 --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive --debug
         env:
           FIREBASE_DEPLOY_AGENT: github
           FIREBASE_EXTENSIONS_SKIP_CHECK: true
