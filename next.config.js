@@ -43,9 +43,6 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
-    turbotrace: {
-      logLevel: 'error'
-    }
   }
 }
 
