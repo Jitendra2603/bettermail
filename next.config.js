@@ -43,9 +43,6 @@ const nextConfig = {
   },
   output: 'standalone',
   serverExternalPackages: ['firebase-admin'],
-  experimental: {
-    serverComponentsExternalPackages: ['firebase-admin'],
-  },
 }
 
 module.exports = nextConfig 

@@ -40,9 +40,9 @@ run:
     NEXT_PUBLIC_FIREBASE_APP_ID: 1:299168470266:web:c63587cb766fda31962543
     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: G-ZBQMRZ5D97
     NEXTAUTH_URL: https://messages.lu.vg
+    NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
     ADMIN_PROJECT_ID: bettermail-cb010
     ADMIN_CLIENT_EMAIL: firebase-adminsdk-fbsvc@bettermail-cb010.iam.gserviceaccount.com
-    NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
 
 # Secrets are stored in Cloud Secret Manager
 env:
