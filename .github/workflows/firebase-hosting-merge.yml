@@ -54,9 +54,12 @@ jobs:
           
       - name: Install dependencies
         run: npm install --legacy-peer-deps
-        
+
       - name: Install Functions dependencies
         run: cd functions && npm install --legacy-peer-deps
+      
+      - name: Enable Firebase Web Frameworks
+        run: npx firebase-tools experiments:enable webframeworks
         
       - name: Build
         run: npm run build
@@ -68,7 +71,3 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BETTERMAIL_CB010 }}
           channelId: live
           projectId: bettermail-cb010
-          target: messages-lu-vg
-          
-      - name: Deploy Firebase Functions
-        run: npx firebase-tools deploy --only functions:nextjsServer --project bettermail-cb010 --token "${{ secrets.FIREBASE_TOKEN }}"
