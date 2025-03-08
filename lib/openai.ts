@@ -5,10 +5,26 @@ import { createHash } from 'crypto';
 import { RateLimiter } from 'limiter';
 import { FieldValue } from 'firebase-admin/firestore';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI client with a conditional check for build time
+let openai: OpenAI;
+
+try {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build-time',
+  });
+} catch (error) {
+  console.warn('Error initializing OpenAI client:', error);
+  // Provide a dummy client for build time
+  openai = {
+    chat: {
+      completions: {
+        create: async () => {
+          throw new Error('OpenAI client not properly initialized');
+        }
+      }
+    }
+  } as unknown as OpenAI;
+}
 
 // Rate limiter: 50 requests per minute per user
 const rateLimiters = new Map<string, RateLimiter>();

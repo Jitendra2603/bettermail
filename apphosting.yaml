@@ -30,8 +30,11 @@ build:
 run:
   command: npm start
   env:
+    # Public environment variables (non-sensitive)
     NODE_ENV: production
     NEXT_TELEMETRY_DISABLED: 1
+
+    # Firebase public config
     NEXT_PUBLIC_FIREBASE_PROJECT_ID: bettermail-cb010
     NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyCOttqMVTqbbulUrSzw6zmcxjgykfbtQGE
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: bettermail-cb010.firebaseapp.com
@@ -39,15 +42,39 @@ run:
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: 299168470266
     NEXT_PUBLIC_FIREBASE_APP_ID: 1:299168470266:web:c63587cb766fda31962543
     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: G-ZBQMRZ5D97
+
+    # URLs
     NEXTAUTH_URL: https://messages.lu.vg
     NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
+
+    # Firebase Admin (non-sensitive parts)
     ADMIN_PROJECT_ID: bettermail-cb010
+    ADMIN_CLIENT_EMAIL: firebase-adminsdk-fbsvc@bettermail-cb010.iam.gserviceaccount.com
+
+    # Google OAuth (non-sensitive parts)
+    GOOGLE_CLIENT_ID: 299168470266-3del0isooo9vevdbe9poetvp2iupn5dt.apps.googleusercontent.com
+
+    # LlamaParse API URL (non-sensitive)
+    LLAMA_PARSE_API_URL: https://api.cloud.llamaindex.ai/api/parsing/upload
 
 # Secrets are stored in Cloud Secret Manager
 env:
+  # Firebase Admin
   - variable: ADMIN_PRIVATE_KEY
     secret: admin-private-key
+
+  # NextAuth
   - variable: NEXTAUTH_SECRET
     secret: nextauth-secret
-  - variable: ADMIN_CLIENT_EMAIL
-    secret: ADMIN_CLIENT_EMAIL
+
+  # API Keys
+  - variable: OPENAI_API_KEY
+    secret: openai-api-key
+  - variable: LLAMA_PARSE_API_KEY
+    secret: llama-parse-api-key
+  - variable: BRAINTRUST_API_KEY
+    secret: braintrust-api-key
+  - variable: GOOGLE_CLIENT_SECRET
+    secret: google-client-secret
+  - variable: GOOGLE_CLIENT_ID
+    secret: google-client-id

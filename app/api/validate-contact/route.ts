@@ -1,11 +1,6 @@
-import { initLogger, invoke, wrapTraced } from "braintrust";
+import { invoke, wrapTraced } from "braintrust";
 import { NextResponse } from 'next/server';
-
-initLogger({
-  projectName: "messages",
-  apiKey: process.env.BRAINTRUST_API_KEY,
-  asyncFlush: true,
-});
+import { logger } from "../logger";
 
 export async function POST(req: Request) {
   try {
@@ -22,15 +17,26 @@ export async function POST(req: Request) {
 
 const handleRequest = wrapTraced(async function handleRequest(name: string) {
   try {
-    const result = await invoke({
-      projectName: "messages",
-      slug: "validate-name-317c",
-      input: {
-        name,
-      },
-      stream: false,
-    });
-    return result;
+    // Add a try-catch block to handle potential API key issues
+    try {
+      const result = await invoke({
+        projectName: "messages",
+        slug: "validate-name-317c",
+        input: {
+          name,
+        },
+        stream: false,
+      });
+      return result;
+    } catch (error) {
+      console.error("Error invoking Braintrust:", error);
+      // Fallback response if Braintrust is unavailable
+      return {
+        isValid: true,
+        suggestion: name,
+        reason: "Validation service unavailable, accepting as-is"
+      };
+    }
   } catch (error) {
     console.error("Error in handleRequest:", error);
     throw error;

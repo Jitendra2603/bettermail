@@ -2,21 +2,33 @@ import { OpenAI } from "openai";
 import { Recipient, Message, ReactionType } from "../../../types";
 import { initialContacts } from "../../../data/initial-contacts";
 import { wrapOpenAI } from "braintrust";
-import { initLogger } from "braintrust";
+import { logger } from "../logger";
 
-const client = wrapOpenAI(
-  new OpenAI({
-    baseURL: "https://api.braintrust.dev/v1/proxy",
-    apiKey: process.env.BRAINTRUST_API_KEY!,
-    timeout: 30000,
-    maxRetries: 3,
-  })
-);
+// Initialize OpenAI client with a conditional check for build time
+let client;
 
-initLogger({
-  projectName: "messages",
-  apiKey: process.env.BRAINTRUST_API_KEY,
-});
+try {
+  client = wrapOpenAI(
+    new OpenAI({
+      baseURL: "https://api.braintrust.dev/v1/proxy",
+      apiKey: process.env.BRAINTRUST_API_KEY || 'dummy-key-for-build-time',
+      timeout: 30000,
+      maxRetries: 3,
+    })
+  );
+} catch (error) {
+  console.warn('Error initializing Braintrust OpenAI client:', error);
+  // Provide a dummy client for build time
+  client = {
+    chat: {
+      completions: {
+        create: async () => {
+          throw new Error('OpenAI client not properly initialized');
+        }
+      }
+    }
+  };
+}
 
 interface ChatResponse {
   sender: string;

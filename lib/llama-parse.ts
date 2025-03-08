@@ -9,7 +9,7 @@ export class LlamaParseService {
   private apiKey: string;
   private openAIService?: OpenAIService;
 
-  constructor(apiKey: string, userId: string, openAIService?: OpenAIService) {
+  constructor(apiKey: string = 'dummy-key-for-build-time', userId: string = 'build-time-user', openAIService?: OpenAIService) {
     this.userId = userId;
     this.apiKey = apiKey;
     this.openAIService = openAIService;
