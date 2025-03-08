@@ -1,6 +1,7 @@
 {
   "hosting": {
     "site": "messages-lu-vg",
+    "source": ".",
     "ignore": [
       "firebase.json",
       "**/.*",

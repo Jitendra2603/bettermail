@@ -61,35 +61,10 @@ jobs:
       - name: Build
         run: npm run build
         
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BETTERMAIL_CB010 }}
-      
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-      
-      - name: Grant Extensions Permissions
-        run: |
-          gcloud projects add-iam-policy-binding bettermail-cb010 \
-            --member=serviceAccount:github-actions@bettermail-cb010.iam.gserviceaccount.com \
-            --role=roles/firebaseextensions.viewer
-        continue-on-error: true
-        
-      - name: Deploy to Firebase (Standard Method)
-        id: standard_deploy
+      - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BETTERMAIL_CB010 }}
           channelId: live
           projectId: bettermail-cb010
-        continue-on-error: true
-        
-      - name: Deploy to Firebase (Fallback Method)
-        if: steps.standard_deploy.outcome == 'failure'
-        run: |
-          echo "Standard deployment failed, using fallback method..."
-          npx firebase-tools deploy --only hosting --project bettermail-cb010 --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
-        env:
-          FIREBASE_DEPLOY_AGENT: github
