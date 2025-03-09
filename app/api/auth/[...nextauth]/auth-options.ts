@@ -97,16 +97,28 @@ export const authOptions: AuthOptions = {
     },
     // Override the redirect callback to always go to /messages after authentication
     async redirect({ url, baseUrl }) {
+      console.log("NextAuth redirect called with:", { url, baseUrl });
+      
       // After successful authentication, always redirect to /messages
       if (url.includes('/api/auth/callback')) {
+        console.log("Redirecting to /messages after callback");
         return `${baseUrl}/messages`;
       }
       
       // For other URLs, use default behavior
-      if (url.startsWith(baseUrl)) return url;
-      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      if (url.startsWith(baseUrl)) {
+        console.log("URL starts with baseUrl, returning as is:", url);
+        return url;
+      }
+      
+      if (url.startsWith('/')) {
+        console.log("URL starts with /, returning with baseUrl:", `${baseUrl}${url}`);
+        return `${baseUrl}${url}`;
+      }
+      
+      console.log("Returning URL as is:", url);
       return url;
-    }
+    },
   },
   pages: {
     signIn: "/login",
@@ -125,5 +137,6 @@ export const authOptions: AuthOptions = {
       },
     },
   },
+  debug: process.env.NODE_ENV !== 'production', // Enable debug logs in development
   secret: process.env.NEXTAUTH_SECRET,
 }; 

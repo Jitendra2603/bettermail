@@ -22,45 +22,18 @@ export default function LoginPage() {
     try {
       setIsLoading(true);
       
-      // Sign in with NextAuth - use redirect: true to let NextAuth handle the redirect
+      // Sign in with NextAuth
       console.log("[Login] Starting Google sign in");
+      
+      // Use signIn with redirect: true to let NextAuth handle the redirect
+      // This will take the user through the OAuth flow and then redirect to /messages
       await signIn("google", { 
-        callbackUrl: "/messages",
-        redirect: true 
+        callbackUrl: "/messages"
       });
       
-      // The code below won't execute if redirect is true
-      // It's kept as a fallback in case the redirect doesn't work
-      console.log("[Login] Getting session data");
-      const response = await fetch('/api/auth/session');
-      const session = await response.json();
-
-      if (!session?.firebaseToken) {
-        throw new Error('No Firebase token available');
-      }
-
-      // Sign in to Firebase with the custom token
-      console.log("[Login] Signing in to Firebase");
-      await signInWithCustomToken(auth, session.firebaseToken);
-      console.log("[Login] Firebase sign in successful");
+      // The code below won't execute if the redirect happens
+      console.log("[Login] If you see this, the redirect didn't happen");
       
-      // Trigger email sync
-      console.log("[Login] Triggering email sync");
-      const syncResponse = await fetch('/api/sync', {
-        method: 'POST',
-      });
-      
-      if (!syncResponse.ok) {
-        const errorData = await syncResponse.json();
-        console.error("[Login] Sync failed:", errorData);
-        throw new Error(`Sync failed: ${errorData.error}`);
-      }
-
-      const syncData = await syncResponse.json();
-      console.log("[Login] Sync response:", syncData);
-
-      // Navigate to messages page
-      router.push('/messages');
     } catch (error) {
       console.error('[Login] Error:', error);
       toast({
@@ -68,7 +41,6 @@ export default function LoginPage() {
         description: error instanceof Error ? error.message : "Failed to log in. Please try again.",
         variant: "destructive",
       });
-    } finally {
       setIsLoading(false);
     }
   };

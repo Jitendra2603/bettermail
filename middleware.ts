@@ -2,10 +2,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
   
-  // If the user is trying to access the error page, redirect them to /messages
+  // If we detect an OAuth error, log it and redirect to /messages
+  // This is a fallback in case the authentication flow fails
   if (pathname.startsWith('/api/auth/error')) {
+    console.log('Auth error detected, redirecting to /messages');
+    
     // Create a new URL for the redirect destination
     const url = request.nextUrl.clone();
     url.pathname = '/messages';
@@ -15,18 +18,6 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   
-  // If the user has completed OAuth callback, redirect to /messages
-  if (pathname.startsWith('/api/auth/callback')) {
-    // Check if this is the final callback (not the initial OAuth redirect)
-    const hasCode = request.nextUrl.searchParams.has('code');
-    
-    if (hasCode) {
-      // This appears to be a completed OAuth flow, prepare for redirect
-      // We'll let NextAuth handle this first, but our redirect callback should take over
-      return NextResponse.next();
-    }
-  }
-  
   return NextResponse.next();
 }
 
@@ -34,6 +25,5 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/api/auth/error/:path*',
-    '/api/auth/callback/:path*',
   ],
 }; 
