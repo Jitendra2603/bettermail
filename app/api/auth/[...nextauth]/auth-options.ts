@@ -106,7 +106,7 @@ export const authOptions: AuthOptions = {
       console.log("NextAuth redirect called with:", { url, baseUrl });
       
       // After successful authentication, always redirect to /messages
-      if (url.includes('/api/auth/callback') || url.includes('/__/auth/handler')) {
+      if (url.includes('/api/auth/callback') || url.includes('/__/auth/handler') || url.includes('/__/hosting/verification')) {
         console.log("Redirecting to /messages after callback");
         return `${baseUrl}/messages`;
       }

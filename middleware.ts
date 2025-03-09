@@ -30,6 +30,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   
+  // Handle Firebase Hosting verification
+  if (pathname.startsWith('/__/hosting/verification')) {
+    console.log('Firebase Hosting verification detected, redirecting to /messages');
+    
+    // Create a new URL for the redirect destination
+    const url = request.nextUrl.clone();
+    url.pathname = '/messages';
+    
+    // Return a redirect response
+    return NextResponse.redirect(url);
+  }
+  
   // If we detect an OAuth error, log it and redirect to /login
   if (pathname.startsWith('/api/auth/error')) {
     console.log('Auth error detected, redirecting to /login');
@@ -56,6 +68,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/__/auth/handler',
+    '/__/hosting/verification',
     '/api/auth/error/:path*',
   ],
 }; 
