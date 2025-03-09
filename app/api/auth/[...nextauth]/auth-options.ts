@@ -33,9 +33,12 @@ declare module "next-auth" {
 
 // Determine the correct callback URL based on environment
 const getCallbackUrl = () => {
-  // Use NEXTAUTH_URL from environment if available, otherwise use production URL
-  const baseUrl = process.env.NEXTAUTH_URL || 'https://messages.lu.vg';
-  return `${baseUrl}/api/auth/callback/google`;
+  // Always use the production URL for callbacks in production
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://messages.lu.vg/api/auth/callback/google';
+  }
+  // Use localhost for development
+  return 'http://localhost:3000/api/auth/callback/google';
 };
 
 export const authOptions: AuthOptions = {
@@ -92,24 +95,17 @@ export const authOptions: AuthOptions = {
       }
       return session;
     },
-    // Add a redirect callback to ensure users are redirected to /messages after login
+    // Override the redirect callback to always go to /messages after authentication
     async redirect({ url, baseUrl }) {
-      // If the URL starts with the base URL, it's a relative URL
-      if (url.startsWith(baseUrl)) {
-        // If it's the callback URL, redirect to /messages
-        if (url.includes('/api/auth/callback')) {
-          return `${baseUrl}/messages`;
-        }
-        // Otherwise, keep the URL as is
-        return url;
+      // After successful authentication, always redirect to /messages
+      if (url.includes('/api/auth/callback')) {
+        return `${baseUrl}/messages`;
       }
-      // For absolute URLs that don't start with the base URL
-      // If it's an allowed external URL, allow it
-      if (url.startsWith('https://accounts.google.com')) {
-        return url;
-      }
-      // Default fallback - redirect to base URL
-      return baseUrl;
+      
+      // For other URLs, use default behavior
+      if (url.startsWith(baseUrl)) return url;
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      return url;
     }
   },
   pages: {

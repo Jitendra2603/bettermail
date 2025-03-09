@@ -22,18 +22,15 @@ export default function LoginPage() {
     try {
       setIsLoading(true);
       
-      // Sign in with NextAuth
+      // Sign in with NextAuth - use redirect: true to let NextAuth handle the redirect
       console.log("[Login] Starting Google sign in");
-      const result = await signIn("google", { 
+      await signIn("google", { 
         callbackUrl: "/messages",
-        redirect: false 
+        redirect: true 
       });
-
-      if (result?.error) {
-        throw new Error(result.error);
-      }
-
-      // Get the session to access the Firebase token
+      
+      // The code below won't execute if redirect is true
+      // It's kept as a fallback in case the redirect doesn't work
       console.log("[Login] Getting session data");
       const response = await fetch('/api/auth/session');
       const session = await response.json();
