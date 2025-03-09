@@ -92,9 +92,29 @@ export const authOptions: AuthOptions = {
       }
       return session;
     },
+    // Add a redirect callback to ensure users are redirected to /messages after login
+    async redirect({ url, baseUrl }) {
+      // If the URL starts with the base URL, it's a relative URL
+      if (url.startsWith(baseUrl)) {
+        // If it's the callback URL, redirect to /messages
+        if (url.includes('/api/auth/callback')) {
+          return `${baseUrl}/messages`;
+        }
+        // Otherwise, keep the URL as is
+        return url;
+      }
+      // For absolute URLs that don't start with the base URL
+      // If it's an allowed external URL, allow it
+      if (url.startsWith('https://accounts.google.com')) {
+        return url;
+      }
+      // Default fallback - redirect to base URL
+      return baseUrl;
+    }
   },
   pages: {
     signIn: "/login",
+    error: "/login", // Redirect to login page on error
   },
   // Use absolute URLs for callbacks
   useSecureCookies: process.env.NODE_ENV === 'production',
