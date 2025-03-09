@@ -20,7 +20,7 @@ const config = {
   ],
   // Environment variables to set for build
   envVars: {
-    NODE_OPTIONS: '--max-old-space-size=4096', // Increase memory limit
+    // Don't set NODE_OPTIONS here as it's not allowed in Next.js config
     NEXT_TELEMETRY_DISABLED: '1', // Disable telemetry
     NEXT_CACHE_DIR: '.next/cache', // Set cache directory
   },
@@ -113,7 +113,8 @@ if (process.argv.includes('--build')) {
   console.log('\n🚀 Starting optimized build...');
   try {
     // Use build:fast to avoid infinite recursion
-    execSync('npm run build:fast', { stdio: 'inherit' });
+    // Set NODE_OPTIONS directly in the command instead of as an environment variable
+    execSync('NODE_OPTIONS="--max-old-space-size=4096" npm run build:fast', { stdio: 'inherit' });
     console.log('✅ Build completed successfully!');
   } catch (error) {
     console.error('❌ Build failed:', error.message);

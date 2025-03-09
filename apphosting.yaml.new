@@ -7,28 +7,13 @@ runConfig:
   # cpu: 1
   # memoryMiB: 512
 
-  # Environment variables and secrets.
-  # env:
-  # Configure environment variables.
-  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
-  # - variable: MESSAGE
-  #   value: Hello world!
-  #   availability:
-  #     - BUILD
-  #     - RUNTIME
-
-  # Grant access to secrets in Cloud Secret Manager.
-  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
-  # - variable: MY_SECRET
-  #   secret: mySecretRef
-
 runtime: nodejs20
 build:
   commands:
-    # Standard build commands with optimized flags
+    # Use cached dependencies when possible
     - npm ci --prefer-offline --no-audit --no-fund
-    - NODE_OPTIONS="--max-old-space-size=4096" npm run build
-  # Use built-in caching
+    - npm run build
+  # Cache node_modules and Next.js build cache between builds
   cache:
     paths:
       - node_modules/
@@ -92,24 +77,4 @@ env:
     secret: openai-api-key
     availability:
       - BUILD
-      - RUNTIME
-  - variable: LLAMA_PARSE_API_KEY
-    secret: llama-parse-api-key
-    availability:
-      - RUNTIME
-      - BUILD
-  - variable: BRAINTRUST_API_KEY
-    secret: braintrust-api-key
-    availability:
-      - RUNTIME
-      - BUILD
-  - variable: GOOGLE_CLIENT_SECRET
-    secret: google-client-secret
-    availability:
-      - RUNTIME
-      - BUILD
-  - variable: GOOGLE_CLIENT_ID
-    secret: google-client-id
-    availability:
-      - RUNTIME
-      - BUILD
+      - RUNTIME 

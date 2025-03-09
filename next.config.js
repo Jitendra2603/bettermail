@@ -45,10 +45,6 @@ const nextConfig = {
   output: 'standalone',
   serverExternalPackages: ['firebase-admin'],
   experimental: {
-    // Enable build cache
-    turbotrace: {
-      logLevel: 'error',
-    },
     // Optimize compilation
     optimizePackageImports: ['@mui/material', '@mui/icons-material', 'react-icons'],
   },
