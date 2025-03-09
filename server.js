@@ -1,11 +1,12 @@
-// This file is used by Firebase Hosting to serve the Next.js app
+// This file is used for custom server configuration
+// Note: Vercel will use its own server in production
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 
 const dev = process.env.NODE_ENV !== 'production';
-// In production, use the actual domain; in development, bind to all interfaces
-const hostname = process.env.NODE_ENV === 'production' ? 'messages.lu.vg' : '0.0.0.0';
+// In production, Vercel handles the hostname; in development, bind to all interfaces
+const hostname = dev ? '0.0.0.0' : 'localhost';
 const port = process.env.PORT || 3000;
 
 // Initialize Next.js
