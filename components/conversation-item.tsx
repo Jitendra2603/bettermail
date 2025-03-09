@@ -162,18 +162,6 @@ export function ConversationItem({
             >
               <GroupAvatar recipients={conversation.recipients} size="md" />
             </motion.div>
-          ) : conversation.recipients[0]?.avatar ? (
-            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-              <Image
-                src={conversation.recipients[0].avatar}
-                alt=""
-                className="w-full h-full object-cover"
-                width={40}
-                height={40}
-                sizes="40px"
-                fill={false}
-              />
-            </div>
           ) : (
             <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">

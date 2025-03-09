@@ -21,7 +21,7 @@ export function useWebSocket() {
   const isProduction = process.env.NODE_ENV === 'production';
   const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || (isProduction 
     ? 'https://your-firebase-function-url.cloudfunctions.net/socket' 
-    : 'http://localhost:3001');
+    : 'https://messages.lu.vg');
   
   // Initialize WebSocket connection
   useEffect(() => {

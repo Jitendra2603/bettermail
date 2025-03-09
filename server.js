@@ -4,7 +4,8 @@ const { parse } = require('url');
 const next = require('next');
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = 'localhost';
+// In production, use the actual domain; in development, bind to all interfaces
+const hostname = process.env.NODE_ENV === 'production' ? 'messages.lu.vg' : '0.0.0.0';
 const port = process.env.PORT || 3000;
 
 // Initialize Next.js
@@ -24,7 +25,7 @@ app.prepare().then(() => {
       res.statusCode = 500;
       res.end('Internal Server Error');
     }
-  }).listen(port, (err) => {
+  }).listen(port, hostname, (err) => {
     if (err) throw err;
     console.log(`> Ready on http://${hostname}:${port}`);
   });

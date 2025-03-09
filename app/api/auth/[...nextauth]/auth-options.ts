@@ -33,9 +33,8 @@ declare module "next-auth" {
 
 // Determine the correct callback URL based on environment
 const getCallbackUrl = () => {
-  // Use NEXTAUTH_URL from environment, or fallback to production URL
-  const baseUrl = process.env.NEXTAUTH_URL || 'https://messages.lu.vg';
-  return `${baseUrl}/api/auth/callback/google`;
+  // Always use the production URL for callbacks
+  return `https://messages.lu.vg/api/auth/callback/google`;
 };
 
 export const authOptions: AuthOptions = {

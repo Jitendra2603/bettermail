@@ -167,22 +167,14 @@ export function ContactDrawer({
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
-                        {recipient.avatar ? (
-                          <img
-                            src={recipient.avatar}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A]">
-                            <span className="text-white text-sm font-medium">
-                              {recipient.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </span>
-                          </div>
-                        )}
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A]">
+                          <span className="text-white text-sm font-medium">
+                            {recipient.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </span>
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium">{recipient.name}</div>

@@ -523,13 +523,13 @@ export function Sidebar({
                                       ) : null}
                                       <div className="w-16 sm:w-14 h-16 sm:h-14 rounded-full overflow-hidden mb-1 shadow-md">
                                         {conversation.recipients[0].avatar ? (
-                                          <img
-                                            src={
-                                              conversation.recipients[0].avatar
-                                            }
-                                            alt=""
-                                            className="w-full h-full object-cover"
-                                          />
+                                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
+                                            <span className="relative text-white text-2xl sm:text-xl font-medium">
+                                              {getInitials(
+                                                conversation.recipients[0].name
+                                              )}
+                                            </span>
+                                          </div>
                                         ) : (
                                           <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
                                             <span className="relative text-white text-2xl sm:text-xl font-medium">

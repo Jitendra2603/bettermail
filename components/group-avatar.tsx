@@ -23,7 +23,6 @@ export function GroupAvatar({ recipients, size = "md", className = "" }: GroupAv
     const recipient = displayRecipients[0];
     return (
       <Avatar className={`${containerSize} ${className}`}>
-        <AvatarImage src={recipient.avatar} alt={recipient.name} />
         <AvatarFallback className={fontSize}>
           {recipient.name.split(" ").map(n => n[0]).join("").toUpperCase()}
         </AvatarFallback>

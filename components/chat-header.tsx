@@ -299,22 +299,14 @@ function MobileAvatars({
           className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0"
           style={getOffset(index, recipients.length)}
         >
-          {recipient.avatar ? (
-            <img
-              src={recipient.avatar}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
-              <span className="relative text-white text-base font-medium">
-                {recipient.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")}
-              </span>
-            </div>
-          )}
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#9BA1AA] to-[#7D828A] relative">
+            <span className="relative text-white text-base font-medium">
+              {recipient.name
+                .split(" ")
+                .map((n) => n[0])
+                .join("")}
+            </span>
+          </div>
         </div>
       ))}
     </>
