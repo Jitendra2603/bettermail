@@ -1,0 +1,133 @@
+name: Deploy to Firebase App Hosting
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy_to_apphosting:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      # Firebase configuration
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+      
+      # API Keys
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLAMA_PARSE_API_KEY: ${{ secrets.LLAMA_PARSE_API_KEY }}
+      BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
+      
+      # Firebase Admin
+      FIREBASE_ADMIN_PROJECT_ID: ${{ secrets.FIREBASE_ADMIN_PROJECT_ID }}
+      FIREBASE_ADMIN_CLIENT_EMAIL: ${{ secrets.FIREBASE_ADMIN_CLIENT_EMAIL }}
+      FIREBASE_ADMIN_PRIVATE_KEY: ${{ secrets.FIREBASE_ADMIN_PRIVATE_KEY }}
+      
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      
+      # NextAuth
+      NEXTAUTH_URL: https://messages.lu.vg
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+      
+      # Next.js
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      
+      - name: Cache Next.js build
+        uses: actions/cache@v3
+        with:
+          path: |
+            .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**.[jt]s', '**.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+      
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+      
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+      
+      - name: Verify Firebase CLI installation
+        run: firebase --version
+      
+      - name: Create apphosting.yaml if not exists
+        run: |
+          if [ ! -f "apphosting.yaml" ]; then
+            cp apphosting.yaml.example apphosting.yaml
+          fi
+      
+      - name: Create App Hosting rollout
+        run: |
+          echo "Creating new App Hosting rollout..."
+          firebase apphosting:rollouts:create messages-backend -b main --token "${{ secrets.FIREBASE_TOKEN }}" --project bettermail-cb010
+      
+      - name: Wait for rollout to complete
+        run: |
+          echo "Waiting for rollout to complete..."
+          # Get the latest rollout ID
+          ROLLOUT_ID=$(firebase apphosting:rollouts:list messages-backend --token "${{ secrets.FIREBASE_TOKEN }}" --project bettermail-cb010 --limit=1 --format=json | jq -r '.[0].name' | awk -F'/' '{print $NF}')
+          
+          # Poll the rollout status
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          STATUS=""
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(firebase apphosting:rollouts:get messages-backend/$ROLLOUT_ID --token "${{ secrets.FIREBASE_TOKEN }}" --project bettermail-cb010 --format=json | jq -r '.status')
+            
+            if [ "$STATUS" == "COMPLETE" ]; then
+              echo "Rollout completed successfully!"
+              break
+            elif [ "$STATUS" == "FAILED" ]; then
+              echo "Rollout failed!"
+              exit 1
+            fi
+            
+            echo "Rollout status: $STATUS. Waiting 10 seconds..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT+1))
+          done
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "Timed out waiting for rollout to complete."
+            exit 1
+          fi
+      
+      - name: Deployment summary
+        run: |
+          echo "::group::Deployment Summary"
+          echo "App Hosting URL: https://messages-backend--bettermail-cb010.us-central1.hosted.app"
+          echo "Custom Domain: https://messages.lu.vg"
+          echo "::endgroup::"
