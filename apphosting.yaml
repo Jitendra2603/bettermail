@@ -25,9 +25,9 @@ runConfig:
 runtime: nodejs20
 build:
   commands:
-    # Standard build commands with optimized flags
+    # Simple build commands
     - npm install --no-audit --no-fund
-    - NODE_OPTIONS="--max-old-space-size=4096" npm run build
+    - npm run build
   # Use built-in caching
   cache:
     paths:
