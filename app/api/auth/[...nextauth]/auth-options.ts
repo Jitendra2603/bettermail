@@ -31,6 +31,13 @@ declare module "next-auth" {
   }
 }
 
+// Determine the correct callback URL based on environment
+const getCallbackUrl = () => {
+  // Use NEXTAUTH_URL from environment, or fallback to production URL
+  const baseUrl = process.env.NEXTAUTH_URL || 'https://messages.lu.vg';
+  return `${baseUrl}/api/auth/callback/google`;
+};
+
 export const authOptions: AuthOptions = {
   providers: [
     GoogleProvider({
@@ -41,6 +48,7 @@ export const authOptions: AuthOptions = {
           scope: "openid https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
           access_type: "offline",
           prompt: "consent",
+          redirect_uri: getCallbackUrl(),
         },
       },
     }),
@@ -87,6 +95,19 @@ export const authOptions: AuthOptions = {
   },
   pages: {
     signIn: "/login",
+  },
+  // Use absolute URLs for callbacks
+  useSecureCookies: process.env.NODE_ENV === 'production',
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
 }; 

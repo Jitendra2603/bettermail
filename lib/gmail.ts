@@ -527,7 +527,7 @@ export class GmailService {
               // For API endpoints, fetch from the local server
               try {
                 // Construct the full URL for the API endpoint
-                const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+                const baseUrl = process.env.NEXTAUTH_URL || 'https://messages.lu.vg';
                 const apiUrl = `${baseUrl}${attachment.url}`;
                 
                 console.log('[GmailService] Fetching from API endpoint:', apiUrl);
@@ -1107,7 +1107,7 @@ export class GmailService {
               // For API endpoints, fetch from the local server
               try {
                 // Construct the full URL for the API endpoint
-                const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+                const baseUrl = process.env.NEXTAUTH_URL || 'https://messages.lu.vg';
                 const apiUrl = `${baseUrl}${attachment.url}`;
                 
                 console.log('[GmailService] Fetching from API endpoint:', apiUrl);
