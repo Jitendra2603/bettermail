@@ -88,16 +88,28 @@ jobs:
             cp apphosting.yaml.example apphosting.yaml
           fi
       
+      - name: Firebase Login with CI token
+        run: |
+          echo "Authenticating with Firebase..."
+          # Create a .firebaserc file to set the default project
+          echo '{
+            "projects": {
+              "default": "bettermail-cb010"
+            }
+          }' > .firebaserc
+          # Use the CI token for authentication
+          firebase login:ci --token "${{ secrets.FIREBASE_TOKEN }}"
+      
       - name: Create App Hosting rollout
         run: |
           echo "Creating new App Hosting rollout..."
-          firebase apphosting:rollouts:create messages-backend -b main --token "${{ secrets.FIREBASE_TOKEN }}" --project bettermail-cb010
+          firebase apphosting:rollouts:create messages-backend -b main --project bettermail-cb010
       
       - name: Wait for rollout to complete
         run: |
           echo "Waiting for rollout to complete..."
           # Get the latest rollout ID
-          ROLLOUT_ID=$(firebase apphosting:rollouts:list messages-backend --token "${{ secrets.FIREBASE_TOKEN }}" --project bettermail-cb010 --limit=1 --format=json | jq -r '.[0].name' | awk -F'/' '{print $NF}')
+          ROLLOUT_ID=$(firebase apphosting:rollouts:list messages-backend --project bettermail-cb010 --limit=1 --format=json | jq -r '.[0].name' | awk -F'/' '{print $NF}')
           
           # Poll the rollout status
           MAX_ATTEMPTS=30
@@ -105,7 +117,7 @@ jobs:
           STATUS=""
           
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            STATUS=$(firebase apphosting:rollouts:get messages-backend/$ROLLOUT_ID --token "${{ secrets.FIREBASE_TOKEN }}" --project bettermail-cb010 --format=json | jq -r '.status')
+            STATUS=$(firebase apphosting:rollouts:get messages-backend/$ROLLOUT_ID --project bettermail-cb010 --format=json | jq -r '.status')
             
             if [ "$STATUS" == "COMPLETE" ]; then
               echo "Rollout completed successfully!"
@@ -116,7 +128,7 @@ jobs:
             fi
             
             echo "Rollout status: $STATUS. Waiting 10 seconds..."
-            sleep 10
+            sleep 24
             ATTEMPT=$((ATTEMPT+1))
           done
           
