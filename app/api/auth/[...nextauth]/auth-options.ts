@@ -33,11 +33,17 @@ declare module "next-auth" {
 
 // Determine the correct callback URL based on environment
 const getCallbackUrl = () => {
-  // Always use the production URL for callbacks in production
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://messages.lu.vg/api/auth/callback/google';
+  // Use VERCEL_URL if available (for preview deployments)
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}/api/auth/callback/google`;
   }
-  // Use localhost for development
+  
+  // Use NEXTAUTH_URL if available (for production)
+  if (process.env.NEXTAUTH_URL) {
+    return `${process.env.NEXTAUTH_URL}/api/auth/callback/google`;
+  }
+  
+  // Fallback for local development
   return 'http://localhost:3000/api/auth/callback/google';
 };
 
@@ -100,7 +106,7 @@ export const authOptions: AuthOptions = {
       console.log("NextAuth redirect called with:", { url, baseUrl });
       
       // After successful authentication, always redirect to /messages
-      if (url.includes('/api/auth/callback')) {
+      if (url.includes('/api/auth/callback') || url.includes('/__/auth/handler')) {
         console.log("Redirecting to /messages after callback");
         return `${baseUrl}/messages`;
       }
