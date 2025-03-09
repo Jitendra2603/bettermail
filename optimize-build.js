@@ -106,13 +106,14 @@ Object.entries(config.envVars).forEach(([key, value]) => {
 // Print optimization summary
 console.log('\n✅ Build optimization complete!');
 console.log('Run your build command now for faster builds.');
-console.log('Recommended: npm run build');
+console.log('Recommended: npm run build:fast');
 
 // Execute build if requested
 if (process.argv.includes('--build')) {
   console.log('\n🚀 Starting optimized build...');
   try {
-    execSync('npm run build', { stdio: 'inherit' });
+    // Use build:fast to avoid infinite recursion
+    execSync('npm run build:fast', { stdio: 'inherit' });
     console.log('✅ Build completed successfully!');
   } catch (error) {
     console.error('❌ Build failed:', error.message);
