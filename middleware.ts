@@ -18,14 +18,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   
-  // If we detect an OAuth error, log it and redirect to /messages
+  // If we detect an OAuth error, log it and redirect to /login
   if (pathname.startsWith('/api/auth/error')) {
-    console.log('Auth error detected, redirecting to /messages');
+    console.log('Auth error detected, redirecting to /login');
     
     // Create a new URL for the redirect destination
     const url = request.nextUrl.clone();
-    url.pathname = '/messages';
-    url.search = '';
+    url.pathname = '/login';
+    
+    // Add error parameter
+    const searchParams = new URLSearchParams(request.nextUrl.search);
+    if (searchParams.has('error')) {
+      url.searchParams.set('error', searchParams.get('error')!);
+    }
     
     // Return a redirect response
     return NextResponse.redirect(url);

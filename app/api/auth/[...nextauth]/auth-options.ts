@@ -33,8 +33,13 @@ declare module "next-auth" {
 
 // Determine the correct callback URL based on environment
 const getCallbackUrl = () => {
-  // Use VERCEL_URL if available (for preview deployments)
+  // For Vercel deployments
   if (process.env.VERCEL_URL) {
+    // Check if it's a preview deployment (contains '-')
+    if (process.env.VERCEL_URL.includes('-')) {
+      return `https://${process.env.VERCEL_URL}/api/auth/callback/google`;
+    }
+    // Production deployment on Vercel
     return `https://${process.env.VERCEL_URL}/api/auth/callback/google`;
   }
   
