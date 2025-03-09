@@ -34,7 +34,7 @@ run:
     NODE_ENV: production
     NEXT_TELEMETRY_DISABLED: 1
 
-    # Firebase public config
+    # Firebase public config - these MUST be available at runtime for client-side code
     NEXT_PUBLIC_FIREBASE_PROJECT_ID: bettermail-cb010
     NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyCOttqMVTqbbulUrSzw6zmcxjgykfbtQGE
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: bettermail-cb010.firebaseapp.com
@@ -62,19 +62,39 @@ env:
   # Firebase Admin
   - variable: ADMIN_PRIVATE_KEY
     secret: admin-private-key
+    availability:
+      - RUNTIME
+      - BUILD
 
   # NextAuth
   - variable: NEXTAUTH_SECRET
     secret: nextauth-secret
-
-  # API Keys
+    availability:
+      - RUNTIME
+      - BUILD
+  # API Keys - only include the ones that have been created
   - variable: OPENAI_API_KEY
     secret: openai-api-key
+    availability:
+      - RUNTIME
+      - BUILD
   - variable: LLAMA_PARSE_API_KEY
     secret: llama-parse-api-key
+    availability:
+      - RUNTIME
+      - BUILD
   - variable: BRAINTRUST_API_KEY
     secret: braintrust-api-key
+    availability:
+      - RUNTIME
+      - BUILD
   - variable: GOOGLE_CLIENT_SECRET
     secret: google-client-secret
+    availability:
+      - RUNTIME
+      - BUILD
   - variable: GOOGLE_CLIENT_ID
     secret: google-client-id
+    availability:
+      - RUNTIME
+      - BUILD
