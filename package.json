@@ -4,10 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node optimize-build.js --build",
+    "build:optimized": "node optimize-build.js --build",
+    "build:fast": "next build",
     "start": "node server.js",
     "lint": "next lint",
-    "export": "next export"
+    "export": "next export",
+    "optimize": "node optimize-build.js"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

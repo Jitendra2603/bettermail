@@ -25,15 +25,24 @@ runConfig:
 runtime: nodejs20
 build:
   commands:
-    - npm ci
-    - npm run build
+    # Use optimized build process
+    - npm ci --prefer-offline --no-audit --no-fund
+    - node optimize-build.js --build
+  # Cache node_modules and Next.js build cache between builds
+  cache:
+    paths:
+      - node_modules/
+      - .next/cache/
 run:
   command: npm start
   env:
     # Public environment variables (non-sensitive)
     NODE_ENV: production
     NEXT_TELEMETRY_DISABLED: 1
-
+    
+    # Enable caching for faster builds
+    NEXT_CACHE_DIR: .next/cache
+    
     # Firebase public config - these MUST be available at runtime for client-side code
     NEXT_PUBLIC_FIREBASE_PROJECT_ID: bettermail-cb010
     NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyCOttqMVTqbbulUrSzw6zmcxjgykfbtQGE
@@ -42,18 +51,23 @@ run:
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: 299168470266
     NEXT_PUBLIC_FIREBASE_APP_ID: 1:299168470266:web:c63587cb766fda31962543
     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: G-ZBQMRZ5D97
-
+    
     # URLs
     NEXTAUTH_URL: https://messages.lu.vg
     NEXT_PUBLIC_SITE_URL: https://messages.lu.vg
-
+    
     # Firebase Admin (non-sensitive parts)
     ADMIN_PROJECT_ID: bettermail-cb010
     ADMIN_CLIENT_EMAIL: firebase-adminsdk-fbsvc@bettermail-cb010.iam.gserviceaccount.com
-
+    
     # Google OAuth (non-sensitive parts)
     GOOGLE_CLIENT_ID: 299168470266-3del0isooo9vevdbe9poetvp2iupn5dt.apps.googleusercontent.com
-
+    
+    # API Keys (dummy values for build time)
+    OPENAI_API_KEY: dummy-key-for-build-time
+    LLAMA_PARSE_API_KEY: dummy-key-for-build-time
+    BRAINTRUST_API_KEY: dummy-key-for-build-time
+    
     # LlamaParse API URL (non-sensitive)
     LLAMA_PARSE_API_URL: https://api.cloud.llamaindex.ai/api/parsing/upload
 
@@ -63,21 +77,22 @@ env:
   - variable: ADMIN_PRIVATE_KEY
     secret: admin-private-key
     availability:
-      - RUNTIME
       - BUILD
-
+      - RUNTIME
+    
   # NextAuth
   - variable: NEXTAUTH_SECRET
     secret: nextauth-secret
     availability:
-      - RUNTIME
       - BUILD
+      - RUNTIME
+    
   # API Keys - only include the ones that have been created
   - variable: OPENAI_API_KEY
     secret: openai-api-key
     availability:
-      - RUNTIME
       - BUILD
+      - RUNTIME
   - variable: LLAMA_PARSE_API_KEY
     secret: llama-parse-api-key
     availability:
