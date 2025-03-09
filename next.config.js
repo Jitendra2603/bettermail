@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   images: {
     remotePatterns: [
       {
@@ -57,11 +56,6 @@ const nextConfig = {
   },
   // Disable source maps in production to speed up build
   productionBrowserSourceMaps: false,
-  // Increase build memory limit
-  env: {
-    // Set memory limit for Node.js
-    NODE_OPTIONS: '--max-old-space-size=4096',
-  },
   // Optimize webpack configuration
   webpack: (config, { dev, isServer }) => {
     // Only enable these optimizations in production
@@ -90,6 +84,6 @@ const nextConfig = {
     // Will be available on both server and client
     NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   },
-}
+};
 
-module.exports = nextConfig 
+module.exports = nextConfig; 

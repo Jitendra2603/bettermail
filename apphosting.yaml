@@ -25,9 +25,9 @@ runConfig:
 runtime: nodejs20
 build:
   commands:
-    # Simple build commands
-    - npm install --no-audit --no-fund
-    - npm run build
+    # Simple build commands with environment variables
+    - export NODE_OPTIONS="--max-old-space-size=4096" && npm install --no-audit --no-fund
+    - export NODE_OPTIONS="--max-old-space-size=4096" && npm run build
   # Use built-in caching
   cache:
     paths:
@@ -39,6 +39,7 @@ run:
     # Public environment variables (non-sensitive)
     NODE_ENV: production
     NEXT_TELEMETRY_DISABLED: 1
+    NODE_OPTIONS: "--max-old-space-size=4096"
     
     # Enable caching for faster builds
     NEXT_CACHE_DIR: .next/cache
