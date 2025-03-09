@@ -11,7 +11,14 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith('/__/auth/handler')) {
     // Create a new URL for the redirect destination
     const url = request.nextUrl.clone();
-    url.pathname = '/api/auth/callback/google';
+    
+    // Always redirect to the custom domain in production
+    if (process.env.NODE_ENV === 'production') {
+      url.host = 'messages.lu.vg';
+      url.pathname = '/api/auth/callback/google';
+    } else {
+      url.pathname = '/api/auth/callback/google';
+    }
     
     // Copy all query parameters
     const searchParams = new URLSearchParams(request.nextUrl.search);

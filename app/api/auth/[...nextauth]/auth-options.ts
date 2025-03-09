@@ -33,16 +33,12 @@ declare module "next-auth" {
 
 // Determine the correct callback URL based on environment
 const getCallbackUrl = () => {
-  // Hard-coded Vercel deployment URL (from the error message)
-  const vercelDeploymentUrl = 'https://bettermail-mmkjq6qgb-jitendra2603s-projects.vercel.app';
-  
-  // For Vercel deployments
-  if (process.env.VERCEL_URL) {
-    // Use the exact Vercel deployment URL
-    return `https://${process.env.VERCEL_URL}/api/auth/callback/google`;
+  // Always use the custom domain in production
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://messages.lu.vg/api/auth/callback/google';
   }
   
-  // Use NEXTAUTH_URL if available (for production)
+  // Use NEXTAUTH_URL if available
   if (process.env.NEXTAUTH_URL) {
     return `${process.env.NEXTAUTH_URL}/api/auth/callback/google`;
   }
