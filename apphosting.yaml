@@ -26,7 +26,7 @@ runtime: nodejs20
 build:
   commands:
     # Standard build commands with optimized flags
-    - npm ci --prefer-offline --no-audit --no-fund
+    - npm install --no-audit --no-fund
     - NODE_OPTIONS="--max-old-space-size=4096" npm run build
   # Use built-in caching
   cache:
