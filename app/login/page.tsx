@@ -19,7 +19,22 @@ export default function LoginPage() {
   const buttonLightRef = useRef<HTMLDivElement>(null);
   const buttonLightsRef = useRef<HTMLDivElement[]>([]);
   const loginButtonRef = useRef<HTMLButtonElement>(null);
-  const fallbackButtonRef = useRef<HTMLButtonElement>(null);
+  const textLinkRef = useRef<HTMLButtonElement>(null);
+
+  // Simple direct function to handle the sign in
+  const directSignIn = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent default for anchor tags
+    console.log("[Login] Direct sign in clicked");
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    try {
+      signIn("google", { callbackUrl: "/messages" });
+    } catch (error) {
+      console.error("[Login] Error during direct sign in:", error);
+      setIsLoading(false);
+    }
+  };
 
   const handleGmailLogin = async () => {
     try {
@@ -54,14 +69,14 @@ export default function LoginPage() {
 
     // Check if we're on a large screen (like MacBook 16")
     const checkScreenSize = () => {
+      // Always show the fallback button
       const isLarge = window.innerWidth >= 1440 || window.innerHeight >= 900;
       setIsLargeScreen(isLarge);
       
-      // Show fallback button for large screens
-      if (fallbackButtonRef.current) {
-        fallbackButtonRef.current.style.opacity = isLarge ? '1' : '0';
-        fallbackButtonRef.current.style.visibility = isLarge ? 'visible' : 'hidden';
-      }
+      console.log("[Login] Screen size:", window.innerWidth, "x", window.innerHeight);
+      console.log("[Login] Is large screen:", isLarge);
+      
+      // No need to manipulate visibility here - we'll handle it in the JSX
     };
     
     // Run on initial load
@@ -72,13 +87,6 @@ export default function LoginPage() {
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
       lightRef.current.style.transform = `translate(${windowWidth / 2}px,${windowHeight / 2}px)`;
-    }
-
-    // Add direct click handler to button element to ensure it's clickable
-    const buttonElement = loginButtonRef.current;
-    if (buttonElement) {
-      // Add additional click handler to ensure clicks are captured
-      buttonElement.addEventListener('click', handleGmailLogin);
     }
 
     // Clone the button light for glare effect
@@ -137,11 +145,6 @@ export default function LoginPage() {
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('resize', handleResize);
-      
-      // Clean up click handler
-      if (loginButtonRef.current) {
-        loginButtonRef.current.removeEventListener('click', handleGmailLogin);
-      }
     };
   }, []);
 
@@ -246,12 +249,17 @@ export default function LoginPage() {
           <p className="login-subtitle">Sign in with your Gmail account to continue</p>
         </div>
 
+        {/* Main fancy button */}
         <button
           onClick={handleGmailLogin}
           ref={loginButtonRef}
           disabled={isLoading}
           className="login-button"
-          style={{ position: 'relative', zIndex: 20 }}
+          style={{ 
+            position: 'relative', 
+            zIndex: 20,
+            cursor: 'pointer'
+          }}
         >
           <img 
             className="login-button-bg" 
@@ -283,30 +291,23 @@ export default function LoginPage() {
           </div>
         </button>
 
-        {/* Fallback simple button that will show automatically on larger screens */}
-        <div style={{ marginTop: '10px', textAlign: 'center' }}>
-          <button 
-            onClick={handleGmailLogin}
-            disabled={isLoading}
-            ref={fallbackButtonRef}
+        {/* Simple text link that always works */}
+        <div style={{ width: '100%', textAlign: 'center', marginTop: '20px' }}>
+          <a
+            href="#"
+            onClick={directSignIn}
+            className="text-link"
             style={{
-              background: '#4285F4',
-              color: 'white',
-              padding: '12px 20px',
-              borderRadius: '20px',
-              border: 'none',
+              color: '#4285F4',
+              textDecoration: 'underline',
               cursor: 'pointer',
-              fontWeight: 500,
-              marginTop: '10px',
+              fontSize: '14px',
+              zIndex: 100,
               position: 'relative',
-              zIndex: 30,
-              visibility: isLargeScreen ? 'visible' : 'hidden',
-              opacity: isLargeScreen ? 1 : 0,
-              transition: 'opacity 0.3s, visibility 0.3s',
             }}
           >
-            {isLoading ? "Signing in..." : "Recommended for MacBook 16″: Click here to sign in"}
-          </button>
+            {isLoading ? "Signing in..." : "Having trouble? Sign in here"}
+          </a>
         </div>
 
         <p className="login-footer">
