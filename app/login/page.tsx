@@ -10,6 +10,7 @@ import "@/styles/login.css";
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
+  const [isLargeScreen, setIsLargeScreen] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const mainRef = useRef<HTMLDivElement>(null);
@@ -17,9 +18,12 @@ export default function LoginPage() {
   const loginCardRef = useRef<HTMLDivElement>(null);
   const buttonLightRef = useRef<HTMLDivElement>(null);
   const buttonLightsRef = useRef<HTMLDivElement[]>([]);
+  const loginButtonRef = useRef<HTMLButtonElement>(null);
+  const fallbackButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleGmailLogin = async () => {
     try {
+      console.log("[Login] Button clicked");
       setIsLoading(true);
       
       // Sign in with NextAuth
@@ -48,11 +52,33 @@ export default function LoginPage() {
   useEffect(() => {
     if (!mainRef.current || !lightRef.current || !loginCardRef.current || !buttonLightRef.current) return;
 
+    // Check if we're on a large screen (like MacBook 16")
+    const checkScreenSize = () => {
+      const isLarge = window.innerWidth >= 1440 || window.innerHeight >= 900;
+      setIsLargeScreen(isLarge);
+      
+      // Show fallback button for large screens
+      if (fallbackButtonRef.current) {
+        fallbackButtonRef.current.style.opacity = isLarge ? '1' : '0';
+        fallbackButtonRef.current.style.visibility = isLarge ? 'visible' : 'hidden';
+      }
+    };
+    
+    // Run on initial load
+    checkScreenSize();
+
     // Set initial position in center of screen
     if (lightRef.current) {
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
       lightRef.current.style.transform = `translate(${windowWidth / 2}px,${windowHeight / 2}px)`;
+    }
+
+    // Add direct click handler to button element to ensure it's clickable
+    const buttonElement = loginButtonRef.current;
+    if (buttonElement) {
+      // Add additional click handler to ensure clicks are captured
+      buttonElement.addEventListener('click', handleGmailLogin);
     }
 
     // Clone the button light for glare effect
@@ -71,6 +97,9 @@ export default function LoginPage() {
         const windowHeight = window.innerHeight;
         lightRef.current.style.transform = `translate(${windowWidth / 2}px,${windowHeight / 2}px)`;
       }
+      
+      // Also check screen size on resize
+      checkScreenSize();
     };
 
     // Add mousemove event listener
@@ -108,6 +137,11 @@ export default function LoginPage() {
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('resize', handleResize);
+      
+      // Clean up click handler
+      if (loginButtonRef.current) {
+        loginButtonRef.current.removeEventListener('click', handleGmailLogin);
+      }
     };
   }, []);
 
@@ -214,13 +248,16 @@ export default function LoginPage() {
 
         <button
           onClick={handleGmailLogin}
+          ref={loginButtonRef}
           disabled={isLoading}
           className="login-button"
+          style={{ position: 'relative', zIndex: 20 }}
         >
           <img 
             className="login-button-bg" 
             src="https://cdn.prod.website-files.com/65cceef869e5a56037c32801/672080ee3e9942d6e0617400_Rectangle%201002.png" 
             alt="Background" 
+            draggable="false"
           />
           <div className="login-button-frame">
             {isLoading ? (
@@ -245,6 +282,32 @@ export default function LoginPage() {
             )}
           </div>
         </button>
+
+        {/* Fallback simple button that will show automatically on larger screens */}
+        <div style={{ marginTop: '10px', textAlign: 'center' }}>
+          <button 
+            onClick={handleGmailLogin}
+            disabled={isLoading}
+            ref={fallbackButtonRef}
+            style={{
+              background: '#4285F4',
+              color: 'white',
+              padding: '12px 20px',
+              borderRadius: '20px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 500,
+              marginTop: '10px',
+              position: 'relative',
+              zIndex: 30,
+              visibility: isLargeScreen ? 'visible' : 'hidden',
+              opacity: isLargeScreen ? 1 : 0,
+              transition: 'opacity 0.3s, visibility 0.3s',
+            }}
+          >
+            {isLoading ? "Signing in..." : "Recommended for MacBook 16″: Click here to sign in"}
+          </button>
+        </div>
 
         <p className="login-footer">
           By continuing, you agree to our Terms of Service and Privacy Policy

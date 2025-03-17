@@ -48,6 +48,8 @@ body {
     95.6px 95.6px 55.1px rgba(0, 0, 0, 0.103),
     170px 170px 98px rgba(0, 0, 0, 0.13);
   z-index: 10;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 }
 
 .login-header {
@@ -126,6 +128,11 @@ body {
   margin: 30px 0;
   border: none;
   cursor: pointer;
+  z-index: 20;
+  will-change: transform;
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  touch-action: manipulation;
 }
 
 .login-button-bg {
@@ -136,6 +143,7 @@ body {
   height: 100%;
   object-fit: cover;
   transition: 0.2s filter;
+  pointer-events: none;
 }
 
 .login-button-frame {
@@ -155,6 +163,7 @@ body {
   color: white;
   font-weight: 500;
   font-size: 16px;
+  pointer-events: none;
 }
 
 .login-button:hover .login-button-frame {
