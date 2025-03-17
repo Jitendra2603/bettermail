@@ -48,6 +48,13 @@ export default function LoginPage() {
   useEffect(() => {
     if (!mainRef.current || !lightRef.current || !loginCardRef.current || !buttonLightRef.current) return;
 
+    // Set initial position in center of screen
+    if (lightRef.current) {
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      lightRef.current.style.transform = `translate(${windowWidth / 2}px,${windowHeight / 2}px)`;
+    }
+
     // Clone the button light for glare effect
     for (let i = 0; i < 4; i++) {
       const newButtonLight = buttonLightRef.current.cloneNode(true) as HTMLDivElement;
@@ -56,6 +63,15 @@ export default function LoginPage() {
       mainRef.current.appendChild(newButtonLight);
       buttonLightsRef.current.push(newButtonLight);
     }
+
+    // Add resize event handler
+    const handleResize = () => {
+      if (lightRef.current) {
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        lightRef.current.style.transform = `translate(${windowWidth / 2}px,${windowHeight / 2}px)`;
+      }
+    };
 
     // Add mousemove event listener
     const handleMouseMove = (event: MouseEvent) => {
@@ -71,19 +87,27 @@ export default function LoginPage() {
         loginCardRef.current.style.boxShadow = shadow;
       }
 
-      const lightRadius = 400;
+      // Adjust light radius based on screen size
+      const screenSizeFactor = Math.min(window.innerWidth, window.innerHeight) / 1000;
+      const lightRadius = 400 * screenSizeFactor;
       const opacity = easeInQuad(calculateIntensity(loginCardRef.current, event, lightRadius / 3, lightRadius * 1.3));
       
       const buttonLightsAll = document.querySelectorAll('.button-light');
       buttonLightsAll.forEach((item) => {
         (item as HTMLElement).style.opacity = opacity.toString();
+        (item as HTMLElement).style.transform = `translate3d(${x}px,${y}px,0)`;
       });
     };
 
     window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('resize', handleResize);
+    
+    // Call handleResize once to set initial position
+    handleResize();
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('resize', handleResize);
     };
   }, []);
 
@@ -99,9 +123,12 @@ export default function LoginPage() {
     const deltaY = event.clientY - centerY;
 
     const angle = Math.atan2(deltaY, deltaX);
-    const maxOffset = 3;
+    
+    // Adjust max offset based on screen size
+    const screenSizeFactor = Math.min(window.innerWidth, window.innerHeight) / 1000;
+    const maxOffset = 3 * screenSizeFactor;
 
-    const detectionRadius = rect.width * 2;
+    const detectionRadius = Math.max(rect.width, rect.height) * 2;
     const distance = Math.min(maxOffset, Math.sqrt(deltaX ** 2 + deltaY ** 2) / detectionRadius * maxOffset);
     const offsetX = Math.cos(angle) * distance;
     const offsetY = Math.sin(angle) * distance;
